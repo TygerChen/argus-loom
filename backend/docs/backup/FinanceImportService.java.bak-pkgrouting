@@ -1,0 +1,632 @@
+package com.argus.rag.excel.service;
+
+import com.argus.rag.auth.CurrentUserService;
+import com.argus.rag.excel.model.dto.FinanceRecordUpdateRequest;
+import com.argus.rag.excel.entity.ExcelDocument;
+import com.argus.rag.excel.entity.ExcelSheet;
+import com.argus.rag.excel.entity.FinanceImportBatch;
+import com.argus.rag.excel.entity.FinanceLedgerRecord;
+import com.argus.rag.excel.finance.FinanceWorkbookExtractor;
+import com.argus.rag.excel.mapper.FinanceImportBatchMapper;
+import com.argus.rag.excel.mapper.FinanceLedgerRecordMapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.InputStream;
+import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * 财务标准流水首次导入：
+ * 原文件落盘，进入现有 Excel 分块链路，再抽出标准台账写入 finance_ledger_record。
+ */
+@Service
+public class FinanceImportService {
+
+    private static final Logger log = LoggerFactory.getLogger(FinanceImportService.class);
+
+    private final FinanceWorkbookExtractor extractor;
+    private final ExcelDocumentService documentService;
+    private final ExcelParserService parserService;
+    private final FinanceImportBatchMapper batchMapper;
+    private final FinanceLedgerRecordMapper ledgerMapper;
+    private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
+    private final CurrentUserService currentUserService;
+
+    @Value("${argus.rag.excel.upload-path:./upload}")
+    private String uploadPath;
+
+    public FinanceImportService(FinanceWorkbookExtractor extractor,
+                                ExcelDocumentService documentService,
+                                ExcelParserService parserService,
+                                FinanceImportBatchMapper batchMapper,
+                                FinanceLedgerRecordMapper ledgerMapper,
+                                JdbcTemplate jdbcTemplate,
+                                ObjectMapper objectMapper,
+                                CurrentUserService currentUserService) {
+        this.extractor = extractor;
+        this.documentService = documentService;
+        this.parserService = parserService;
+        this.batchMapper = batchMapper;
+        this.ledgerMapper = ledgerMapper;
+        this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
+        this.currentUserService = currentUserService;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public FinanceImportBatch importFile(MultipartFile file,
+                                         String bookKey,
+                                         String regionName,
+                                         String currencyCode) throws Exception {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("上传文件为空");
+        }
+        String originalName = file.getOriginalFilename();
+        Path saved = saveFile(file);
+
+        FinanceWorkbookExtractor.ExtractionResult extraction = extractAt(saved, currencyCode);
+        if (extraction.records.isEmpty()) {
+            throw new IllegalArgumentException("未从工作簿读取到可导入的财务流水");
+        }
+
+        ExcelDocument document = new ExcelDocument();
+        document.setName(originalName);
+        document.setFilePath(saved.toString());
+        document.setFileSize(file.getSize());
+        document.setCreatorId(String.valueOf(currentUserService.getRequiredCurrentUser().userId()));
+        document.setFinanceRequired(true);
+        documentService.create(document);
+
+        List<ExcelSheet> sheets;
+        try (InputStream is = Files.newInputStream(saved)) {
+            sheets = parserService.parseAndSave(is, document);
+        }
+        documentService.updateSheetMeta(
+                document.getId(),
+                sheets.size(),
+                objectMapper.writeValueAsString(
+                        sheets.stream().map(ExcelSheet::getSheetName).toList()));
+
+        FinanceImportBatch batch = buildBatch(document, originalName, bookKey, regionName, extraction);
+        int nextVersion = nextBatchVersion(batch.getBookKey());
+        if (nextVersion > 1) {
+            batchMapper.update(null, new UpdateWrapper<FinanceImportBatch>()
+                    .eq("book_key", batch.getBookKey())
+                    .set("is_current", 0));
+        }
+        batch.setBatchVersion(nextVersion);
+        batch.setIsCurrent(1);
+        batchMapper.insert(batch);
+        insertRecords(batch, extraction.records);
+        log.info("财务导入完成: documentId={}, batchId={}, rows={}",
+                document.getId(), batch.getId(), extraction.records.size());
+        return batch;
+    }
+
+    public Page<FinanceImportBatch> pageBatches(int pageNum, int pageSize) {
+        Page<FinanceImportBatch> page = new Page<>(Math.max(pageNum, 1), Math.min(pageSize, 200));
+        QueryWrapper<FinanceImportBatch> wrapper = new QueryWrapper<>();
+        wrapper.orderByDesc("is_current").orderByDesc("batch_version").orderByDesc("id");
+        return batchMapper.selectPage(page, wrapper);
+    }
+
+    public List<FinanceImportBatch> listBatchVersions(String bookKey) {
+        if (!StringUtils.hasText(bookKey)) {
+            return List.of();
+        }
+        QueryWrapper<FinanceImportBatch> wrapper = new QueryWrapper<>();
+        wrapper.eq("book_key", bookKey)
+                .orderByDesc("batch_version")
+                .orderByDesc("id");
+        return batchMapper.selectList(wrapper);
+    }
+
+    public Page<FinanceLedgerRecord> pageRecords(Long batchId, int pageNum, int pageSize) {
+        Page<FinanceLedgerRecord> page = new Page<>(Math.max(pageNum, 1), Math.min(pageSize, 500));
+        QueryWrapper<FinanceLedgerRecord> wrapper = new QueryWrapper<>();
+        wrapper.eq("batch_id", batchId)
+                .orderByAsc("sheet_index", "excel_row");
+        return ledgerMapper.selectPage(page, wrapper);
+    }
+
+    public Page<FinanceLedgerRecord> pageFilteredRecords(Long batchId,
+                                                         Long documentId,
+                                                         String regionName,
+                                                         String sheetName,
+                                                         String currencyCode,
+                                                         String recordType,
+                                                         String keyword,
+                                                         LocalDate fromDate,
+                                                         LocalDate toDate,
+                                                         boolean includeAll,
+                                                         int pageNum,
+                                                         int pageSize) {
+        Page<FinanceLedgerRecord> page = new Page<>(Math.max(pageNum, 1), Math.min(pageSize, 500));
+        QueryWrapper<FinanceLedgerRecord> wrapper = new QueryWrapper<>();
+        if (batchId != null) {
+            wrapper.eq("batch_id", batchId);
+        }
+        if (documentId != null) {
+            wrapper.eq("document_id", documentId);
+        }
+        if (StringUtils.hasText(regionName)) {
+            QueryWrapper<FinanceImportBatch> regionQuery = new QueryWrapper<FinanceImportBatch>()
+                    .select("id")
+                    .eq("region_name", regionName);
+            if (!includeAll) {
+                regionQuery.eq("is_current", 1);
+            }
+            List<Long> batchIds = batchMapper.selectList(regionQuery)
+                    .stream()
+                    .map(FinanceImportBatch::getId)
+                    .toList();
+            if (batchIds.isEmpty()) {
+                return page;
+            }
+            wrapper.in("batch_id", batchIds);
+        }
+        if (!includeAll && batchId == null && documentId == null) {
+            wrapper.inSql("batch_id", "SELECT id FROM finance_import_batch WHERE is_current = 1");
+        }
+        if (StringUtils.hasText(sheetName)) {
+            wrapper.eq("sheet_name", sheetName);
+        }
+        if (StringUtils.hasText(currencyCode)) {
+            wrapper.eq("currency_code", currencyCode);
+        }
+        if (StringUtils.hasText(recordType)) {
+            wrapper.eq("record_type", recordType);
+        }
+        if (fromDate != null) {
+            wrapper.ge("business_date", fromDate);
+        }
+        if (toDate != null) {
+            wrapper.le("business_date", toDate);
+        }
+        if (StringUtils.hasText(keyword)) {
+            wrapper.and(w -> w.like("summary", keyword)
+                    .or().like("counterparty", keyword)
+                    .or().like("department", keyword)
+                    .or().like("expense_name", keyword));
+        }
+        wrapper.orderByAsc("sheet_index").orderByAsc("excel_row");
+        return ledgerMapper.selectPage(page, wrapper);
+    }
+
+    public Map<String, Object> financeOverview(String regionName,
+                                               Long batchId,
+                                               String currencyCode,
+                                               LocalDate fromDate,
+                                               LocalDate toDate,
+                                               boolean includeAll) {
+        List<Object> params = new ArrayList<>();
+        String fromSql = ledgerFromClause(regionName, batchId, currencyCode, fromDate, toDate, params, includeAll);
+        Object[] args = params.toArray();
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("recordCount", jdbcTemplate.queryForObject("SELECT COUNT(*) " + fromSql, Long.class, args));
+        data.put("batchCount", jdbcTemplate.queryForObject(
+                "SELECT COUNT(DISTINCT r.batch_id) " + fromSql, Long.class, args));
+        data.put("accountCount", jdbcTemplate.queryForObject(
+                // PostgreSQL 不支持 COUNT(DISTINCT a, b, c)，用行值表达式统计唯一账户口径
+                "SELECT COUNT(DISTINCT (r.batch_id, r.sheet_name, r.currency_code)) " + fromSql,
+                Long.class, args));
+        data.put("dateMin", jdbcTemplate.queryForObject(
+                "SELECT MIN(r.business_date) " + fromSql, LocalDate.class, args));
+        data.put("dateMax", jdbcTemplate.queryForObject(
+                "SELECT MAX(r.business_date) " + fromSql, LocalDate.class, args));
+        data.put("debitTotal", jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(r.debit), 0) " + fromSql, BigDecimal.class, args));
+        data.put("creditTotal", jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(r.credit), 0) " + fromSql, BigDecimal.class, args));
+        data.put("incomeTotal", jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(r.income), 0) " + fromSql, BigDecimal.class, args));
+        data.put("expenseTotal", jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(r.expense), 0) " + fromSql, BigDecimal.class, args));
+        data.put("warningCount", jdbcTemplate.queryForObject(
+                "SELECT COUNT(CASE WHEN r.formula_text LIKE '%#REF!%' OR r.warnings LIKE '%#REF!%' THEN 1 END) "
+                        + fromSql, Long.class, args));
+
+        List<Map<String, Object>> currencyTotals = jdbcTemplate.query(
+                "SELECT r.currency_code AS currencyCode, "
+                        + "COUNT(*) AS recordCount, "
+                        + "COALESCE(SUM(r.debit), 0) AS debitTotal, "
+                        + "COALESCE(SUM(r.credit), 0) AS creditTotal, "
+                        + "COALESCE(SUM(r.income), 0) AS incomeTotal, "
+                        + "COALESCE(SUM(r.expense), 0) AS expenseTotal "
+                        + fromSql + " GROUP BY r.currency_code ORDER BY r.currency_code",
+                (rs, rowNum) -> {
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("currencyCode", rs.getString("currencyCode"));
+                    item.put("recordCount", rs.getLong("recordCount"));
+                    item.put("debitTotal", rs.getBigDecimal("debitTotal"));
+                    item.put("creditTotal", rs.getBigDecimal("creditTotal"));
+                    item.put("incomeTotal", rs.getBigDecimal("incomeTotal"));
+                    item.put("expenseTotal", rs.getBigDecimal("expenseTotal"));
+                    return item;
+                },
+                args);
+        data.put("currencyTotals", currencyTotals);
+        return data;
+    }
+
+    /** 账户维度汇总：按“批次 + Sheet + 币种”分组，附期初/期末余额。 */
+    public List<Map<String, Object>> accountSummaries(String regionName,
+                                                      Long batchId,
+                                                      String currencyCode,
+                                                      boolean includeAll) {
+        List<Object> params = new ArrayList<>();
+        String fromSql = ledgerFromClause(regionName, batchId, currencyCode, null, null, params, includeAll)
+                + " ";
+        String sql = """
+                SELECT r.batch_id AS batchId, r.document_id AS documentId,
+                       b.region_name AS regionName, b.file_name AS fileName,
+                       b.book_key AS bookKey, b.batch_version AS batchVersion,
+                       r.sheet_name AS sheetName, r.currency_code AS currencyCode,
+                       MIN(r.business_date) AS firstDate, MAX(r.business_date) AS lastDate,
+                       COUNT(*) AS recordCount,
+                       SUM(CASE WHEN r.record_type = 'OPENING' THEN 1 ELSE 0 END) AS openingCount,
+                       COALESCE(SUM(r.debit), 0) AS debitTotal,
+                       COALESCE(SUM(r.credit), 0) AS creditTotal,
+                       COALESCE(SUM(r.income), 0) AS incomeTotal,
+                       COALESCE(SUM(r.expense), 0) AS expenseTotal,
+                       (SELECT r2.balance FROM finance_ledger_record r2
+                         WHERE r2.batch_id = r.batch_id AND r2.sheet_name = r.sheet_name
+                           AND r2.currency_code = r.currency_code
+                         ORDER BY r2.business_date ASC, r2.excel_row ASC LIMIT 1) AS openingBalance,
+                       (SELECT r3.balance FROM finance_ledger_record r3
+                         WHERE r3.batch_id = r.batch_id AND r3.sheet_name = r.sheet_name
+                           AND r3.currency_code = r.currency_code
+                         ORDER BY r3.business_date DESC, r3.excel_row DESC LIMIT 1) AS endingBalance
+                """ + fromSql + """
+                GROUP BY r.batch_id, r.document_id, b.region_name, b.file_name,
+                         b.book_key, b.batch_version, r.sheet_name, r.currency_code
+                ORDER BY b.region_name, r.sheet_name, r.currency_code
+                """;
+        return jdbcTemplate.query(sql, (rs, rowNum) -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("batchId", rs.getLong("batchId"));
+            row.put("documentId", rs.getLong("documentId"));
+            row.put("regionName", rs.getString("regionName"));
+            row.put("fileName", rs.getString("fileName"));
+            row.put("bookKey", rs.getString("bookKey"));
+            row.put("batchVersion", rs.getInt("batchVersion"));
+            row.put("sheetName", rs.getString("sheetName"));
+            row.put("currencyCode", rs.getString("currencyCode"));
+            row.put("firstDate", rs.getObject("firstDate", LocalDate.class));
+            row.put("lastDate", rs.getObject("lastDate", LocalDate.class));
+            row.put("recordCount", rs.getLong("recordCount"));
+            row.put("openingCount", rs.getLong("openingCount"));
+            row.put("debitTotal", rs.getBigDecimal("debitTotal"));
+            row.put("creditTotal", rs.getBigDecimal("creditTotal"));
+            row.put("incomeTotal", rs.getBigDecimal("incomeTotal"));
+            row.put("expenseTotal", rs.getBigDecimal("expenseTotal"));
+            row.put("openingBalance", rs.getBigDecimal("openingBalance"));
+            row.put("endingBalance", rs.getBigDecimal("endingBalance"));
+            return row;
+        }, params.toArray());
+    }
+
+    /** 每日发生额汇总，最近最多 366 天，适合画趋势图。 */
+    public List<Map<String, Object>> dailySummaries(String regionName,
+                                                     Long batchId,
+                                                     String currencyCode,
+                                                     LocalDate fromDate,
+                                                     LocalDate toDate,
+                                                     boolean includeAll) {
+        List<Object> params = new ArrayList<>();
+        String fromSql = ledgerFromClause(regionName, batchId, currencyCode, fromDate, toDate, params, includeAll);
+        String sql = "SELECT r.business_date AS businessDate, "
+                + "COUNT(*) AS recordCount, "
+                + "COALESCE(SUM(r.debit), 0) AS debitTotal, "
+                + "COALESCE(SUM(r.credit), 0) AS creditTotal, "
+                + "COALESCE(SUM(r.income), 0) AS incomeTotal, "
+                + "COALESCE(SUM(r.expense), 0) AS expenseTotal "
+                + fromSql
+                + " GROUP BY r.business_date ORDER BY r.business_date DESC LIMIT 366";
+        return jdbcTemplate.query(sql, (rs, rowNum) -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("businessDate", rs.getObject("businessDate", LocalDate.class));
+            row.put("recordCount", rs.getLong("recordCount"));
+            row.put("debitTotal", rs.getBigDecimal("debitTotal"));
+            row.put("creditTotal", rs.getBigDecimal("creditTotal"));
+            row.put("incomeTotal", rs.getBigDecimal("incomeTotal"));
+            row.put("expenseTotal", rs.getBigDecimal("expenseTotal"));
+            return row;
+        }, params.toArray());
+    }
+
+    /**
+     * 批量修改流水：先验“指纹乐观锁”，再整行更新非空字段。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public int batchUpdateRecords(List<FinanceRecordUpdateRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            return 0;
+        }
+        int updated = 0;
+        for (FinanceRecordUpdateRequest request : requests) {
+            if (request.id() == null) {
+                throw new IllegalArgumentException("明细记录 ID 不能为空");
+            }
+            FinanceLedgerRecord current = ledgerMapper.selectById(request.id());
+            if (current == null) {
+                throw new IllegalArgumentException("明细记录 " + request.id() + " 不存在");
+            }
+            if (StringUtils.hasText(request.expectedFingerprint())
+                    && !request.expectedFingerprint().equals(recordFingerprint(current))) {
+                throw new IllegalStateException("记录 " + request.id() + " 已被其他用户修改，请刷新后重试");
+            }
+            UpdateWrapper<FinanceLedgerRecord> wrapper = new UpdateWrapper<>();
+            wrapper.eq("id", request.id())
+                    .set("business_date", request.businessDate())
+                    .set("day_label", request.dayLabel())
+                    .set("summary", request.summary())
+                    .set("counterparty", request.counterparty())
+                    .set("department", request.department())
+                    .set("category", request.category())
+                    .set("expense_name", request.expenseName())
+                    .set("debit", request.debit())
+                    .set("credit", request.credit())
+                    .set("balance", request.balance())
+                    .set("prev_balance", request.prevBalance())
+                    .set("income", request.income())
+                    .set("expense", request.expense())
+                    .set("fixed_purchase", request.fixedPurchase())
+                    .set("fixed_redemption", request.fixedRedemption())
+                    .set("fixed_balance", request.fixedBalance())
+                    .set("currency_code", request.currencyCode())
+                    .set("warnings", request.warnings());
+            updated += ledgerMapper.update(null, wrapper);
+        }
+        return updated;
+    }
+
+    /**
+     * 切换“当前版本”：把同账本其他批次都标成非当前，再把目标批次标成当前。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public FinanceImportBatch activateBatch(Long batchId) {
+        FinanceImportBatch target = batchMapper.selectById(batchId);
+        if (target == null) {
+            throw new IllegalArgumentException("导入批次不存在: " + batchId);
+        }
+        if (!StringUtils.hasText(target.getBookKey())) {
+            throw new IllegalArgumentException("该批次没有账本标识，无法作为版本回滚目标");
+        }
+        batchMapper.update(null, new UpdateWrapper<FinanceImportBatch>()
+                .eq("book_key", target.getBookKey())
+                .set("is_current", 0));
+        target.setIsCurrent(1);
+        batchMapper.updateById(target);
+        return target;
+    }
+
+    private String ledgerFromClause(String regionName,
+                                    Long batchId,
+                                    String currencyCode,
+                                    LocalDate fromDate,
+                                    LocalDate toDate,
+                                    List<Object> params,
+                                    boolean includeAll) {
+        StringBuilder sql = new StringBuilder("FROM finance_ledger_record r ");
+        sql.append("JOIN finance_import_batch b ON r.batch_id = b.id ");
+        List<String> conditions = new ArrayList<>();
+        if (StringUtils.hasText(regionName)) {
+            conditions.add("b.region_name = ?");
+            params.add(regionName);
+        }
+        if (batchId != null) {
+            conditions.add("r.batch_id = ?");
+            params.add(batchId);
+        } else if (!includeAll) {
+            conditions.add("b.is_current = 1");
+        }
+        if (StringUtils.hasText(currencyCode)) {
+            conditions.add("r.currency_code = ?");
+            params.add(currencyCode);
+        }
+        if (fromDate != null) {
+            conditions.add("r.business_date >= ?");
+            params.add(fromDate);
+        }
+        if (toDate != null) {
+            conditions.add("r.business_date <= ?");
+            params.add(toDate);
+        }
+        if (!conditions.isEmpty()) {
+            sql.append("WHERE ").append(String.join(" AND ", conditions));
+        }
+        return sql.toString();
+    }
+
+    private int nextBatchVersion(String bookKey) {
+        if (!StringUtils.hasText(bookKey)) {
+            return 1;
+        }
+        FinanceImportBatch latest = batchMapper.selectOne(
+                new QueryWrapper<FinanceImportBatch>()
+                        .select("batch_version")
+                        .eq("book_key", bookKey)
+                        .orderByDesc("batch_version")
+                        .last("LIMIT 1"));
+        return latest == null || latest.getBatchVersion() == null
+                ? 1
+                : latest.getBatchVersion() + 1;
+    }
+
+    private String recordFingerprint(FinanceLedgerRecord record) {
+        return String.join("|",
+                text(record.getDayLabel()),
+                text(record.getSummary()),
+                text(record.getCounterparty()),
+                text(record.getDepartment()),
+                text(record.getCategory()),
+                text(record.getExpenseName()),
+                record.getBusinessDate() == null ? "" : record.getBusinessDate().toString(),
+                amount(record.getDebit()),
+                amount(record.getCredit()),
+                amount(record.getBalance()),
+                amount(record.getPrevBalance()),
+                amount(record.getIncome()),
+                amount(record.getExpense()),
+                amount(record.getFixedPurchase()),
+                amount(record.getFixedRedemption()),
+                amount(record.getFixedBalance()),
+                text(record.getCurrencyCode()),
+                text(record.getWarnings()));
+    }
+
+    private String text(String value) {
+        return value == null ? "" : value;
+    }
+
+    private String amount(BigDecimal value) {
+        return value == null ? "" : value.stripTrailingZeros().toPlainString();
+    }
+
+    private FinanceWorkbookExtractor.ExtractionResult extractAt(Path file, String currencyCode) throws Exception {
+        try (InputStream is = Files.newInputStream(file);
+             Workbook workbook = WorkbookFactory.create(is)) {
+            return extractor.extract(workbook, currencyCode);
+        }
+    }
+
+    private void insertRecords(FinanceImportBatch batch, List<FinanceLedgerRecord> records) {
+        String sql = """
+                INSERT INTO finance_ledger_record (
+                    batch_id, document_id, sheet_index, sheet_name, excel_row,
+                    record_type, business_date, day_label, summary, counterparty,
+                    department, category, expense_name, debit, credit, balance,
+                    fixed_purchase, fixed_redemption, fixed_balance, prev_balance,
+                    income, expense, currency_code, raw_json, formula_text,
+                    row_status, warnings
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """;
+        jdbcTemplate.batchUpdate(sql, records, 512, (ps, record) -> {
+            ps.setLong(1, batch.getId());
+            ps.setLong(2, batch.getDocumentId());
+            ps.setInt(3, record.getSheetIndex());
+            ps.setString(4, record.getSheetName());
+            ps.setInt(5, record.getExcelRow());
+            ps.setString(6, record.getRecordType());
+            setDate(ps, 7, record.getBusinessDate());
+            ps.setString(8, record.getDayLabel());
+            ps.setString(9, record.getSummary());
+            ps.setString(10, record.getCounterparty());
+            ps.setString(11, record.getDepartment());
+            ps.setString(12, record.getCategory());
+            ps.setString(13, record.getExpenseName());
+            setAmount(ps, 14, record.getDebit());
+            setAmount(ps, 15, record.getCredit());
+            setAmount(ps, 16, record.getBalance());
+            setAmount(ps, 17, record.getFixedPurchase());
+            setAmount(ps, 18, record.getFixedRedemption());
+            setAmount(ps, 19, record.getFixedBalance());
+            setAmount(ps, 20, record.getPrevBalance());
+            setAmount(ps, 21, record.getIncome());
+            setAmount(ps, 22, record.getExpense());
+            ps.setString(23, record.getCurrencyCode());
+            ps.setString(24, record.getRawJson());
+            ps.setString(25, record.getFormulaText());
+            ps.setInt(26, record.getRowStatus());
+            ps.setString(27, record.getWarnings());
+        });
+        log.info("批量写入财务流水 {} 条", records.size());
+    }
+
+    private FinanceImportBatch buildBatch(ExcelDocument document,
+                                          String originalName,
+                                          String bookKey,
+                                          String regionName,
+                                          FinanceWorkbookExtractor.ExtractionResult extraction) {
+        FinanceImportBatch batch = new FinanceImportBatch();
+        batch.setDocumentId(document.getId());
+        batch.setBookKey(StringUtils.hasText(bookKey) ? bookKey : inferBookKey(originalName));
+        batch.setRegionName(StringUtils.hasText(regionName) ? regionName : inferRegion(originalName));
+        batch.setFileName(originalName);
+        batch.setFilePath(document.getFilePath());
+        batch.setFileSize(document.getFileSize());
+        batch.setTotalSheets(extraction.importedSheets + extraction.skippedSheets.size());
+        batch.setImportedSheets(extraction.importedSheets);
+        batch.setTotalRows(extraction.records.size() + extraction.skippedRows);
+        batch.setMappedRows(extraction.records.size());
+        batch.setSkippedRows(extraction.skippedRows);
+        batch.setStatus(extraction.skippedSheets.isEmpty() ? 2 : 3);
+        batch.setErrorSummary(extraction.skippedSheets.isEmpty()
+                ? null
+                : "跳过 Sheet: " + String.join("; ", extraction.skippedSheets.keySet()));
+        return batch;
+    }
+
+    private Path saveFile(MultipartFile file) throws Exception {
+        Path dir = Paths.get(uploadPath).toAbsolutePath().normalize();
+        if (!Files.exists(dir)) {
+            Files.createDirectories(dir);
+        }
+        String originalName = file.getOriginalFilename() == null ? "finance.xlsx" : file.getOriginalFilename();
+        String safeName = UUID.randomUUID() + "_" + originalName.replaceAll("[\\\\/:*?\"<>|]", "_");
+        Path path = dir.resolve(safeName);
+        try (InputStream in = file.getInputStream()) {
+            Files.copy(in, path, StandardCopyOption.REPLACE_EXISTING);
+        }
+        return path;
+    }
+
+    /** 从文件名推断账本标识，用于没有显式传 bookKey 的旧版导入。 */
+    private String inferBookKey(String fileName) {
+        if (fileName != null && fileName.contains("北京")) {
+            return "BJ-2026";
+        }
+        if (fileName != null && fileName.contains("唐山")) {
+            return "TS-2026";
+        }
+        return "UNIT-2026";
+    }
+
+    /** 从文件名推断区域名称。 */
+    private String inferRegion(String fileName) {
+        if (fileName != null && fileName.contains("北京")) {
+            return "北京";
+        }
+        if (fileName != null && fileName.contains("唐山")) {
+            return "唐山";
+        }
+        return "其他单位";
+    }
+
+    private void setAmount(java.sql.PreparedStatement ps, int index, BigDecimal value) throws java.sql.SQLException {
+        if (value == null) {
+            ps.setObject(index, null);
+        } else {
+            ps.setBigDecimal(index, value);
+        }
+    }
+
+    private void setDate(java.sql.PreparedStatement ps, int index, LocalDate value) throws java.sql.SQLException {
+        ps.setObject(index, value);
+    }
+}

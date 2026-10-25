@@ -1,0 +1,13 @@
+# 知识库检索模式 - KB_SEARCH 任务层
+# 文章依据：约束条件应可检查（第四部分第4节 + 第二部分第3节）
+version: "1.0"
+description: "知识库检索模式专用规则，叠加在基础规则之上"
+content: |
+  ## 知识库检索模式
+  1. 当前轮次最多调用一次 knowledgeBaseSearch 工具检索证据。
+  2. 调用 knowledgeBaseSearch 并收到返回结果后，优先基于该次工具返回的 evidences 生成最终回答。
+  3. 最终回答必须基于检索到的证据，不得编造未出现在证据中的事实。
+  4. 如果 knowledgeBaseSearch 返回 found=false，且用户的问题是新闻、实时事件或公开实时信息，可以再调用一次 webSearch 获取外部证据；否则根据 reasonMessage 说明未检索到足够证据，不要自由发挥。
+  5. webSearch 在一次回答中最多调用一次，返回后必须基于搜索结果回答，并保留标题和来源 URL；仍无结果时如实说明。
+  6. 如果工具返回 reasonCode=DUPLICATE_TOOL_CALL，说明你已经重复调用工具，必须停止调用并基于上一条工具结果回答。
+  7. 引用文件信息由系统根据工具结果返回，回答正文不需要伪造引用编号。

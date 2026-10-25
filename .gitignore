@@ -1,0 +1,75 @@
+# ========================
+# 环境与密钥（绝不提交）
+# ========================
+.env
+.env.*
+!.env.example
+
+# ========================
+# IDE / 编辑器
+# ========================
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ========================
+# 操作系统
+# ========================
+.DS_Store
+Thumbs.db
+
+# ========================
+# 日志
+# ========================
+logs/
+*.log
+
+# ========================
+# Backend (Maven / Spring Boot)
+# ========================
+backend/target/
+backend/.mvn/wrapper/maven-wrapper.jar
+backend/logs/
+backend/upload/
+**/application-local.yml
+
+# ========================
+# Frontend (Node / Vite)
+# ========================
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/coverage/
+frontend/*.local
+frontend/.eslintcache
+frontend/__screenshots__/
+frontend/*.timestamp-*-*.mjs
+
+# ========================
+# Python 脚本缓存
+# ========================
+__pycache__/
+*.pyc
+
+# ========================
+# 其他
+# ========================
+*.class
+*.jar
+!backend/mvnw
+!backend/mvnw.cmd
+# 个人求职材料——只留在本地工作区，绝不进任何 git 历史（含私有 origin）
+木及简历*.md
+docs/Boss在线简历文案*.md
+docs/简历*.md
+docs/求职*.md
+docs/投递漏斗*.md
+scripts/投递追踪表.csv
+语雀导入包/

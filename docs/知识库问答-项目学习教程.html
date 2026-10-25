@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Argus-Loom 知识库问答 · 源码学习教程</title>
+<style>
+:root{
+  --bg:#0a0f1e;--bg2:#0d1426;--panel:#121b30;--panel2:#16213a;--line:#203052;
+  --text:#d9e2f5;--muted:#8fa0c0;--cyan:#38c8f0;--cyan2:#7adcff;--purple:#a78bfa;
+  --green:#34d399;--amber:#fbbf24;--red:#f87171;--pink:#f472b6;
+  --mono:'Cascadia Code','JetBrains Mono',Consolas,'Courier New',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:70px}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,'Segoe UI','Microsoft YaHei',system-ui,sans-serif;font-size:15.5px;line-height:1.85}
+body::before{content:'';position:fixed;inset:0;background:
+  radial-gradient(ellipse 800px 500px at 85% -10%,rgba(56,200,240,.08),transparent),
+  radial-gradient(ellipse 700px 400px at -10% 30%,rgba(167,139,250,.07),transparent);pointer-events:none;z-index:0}
+#progress{position:fixed;top:0;left:0;height:3px;width:0;z-index:99;
+  background:linear-gradient(90deg,var(--cyan),var(--purple),var(--pink));transition:width .1s}
+.sidebar{position:fixed;top:0;left:0;bottom:0;width:262px;padding:26px 18px;overflow-y:auto;
+  background:rgba(10,15,30,.92);border-right:1px solid var(--line);z-index:10}
+.sidebar::-webkit-scrollbar{width:4px}.sidebar::-webkit-scrollbar-thumb{background:var(--line);border-radius:2px}
+.logo{font-size:17px;font-weight:700;letter-spacing:.5px;margin-bottom:2px}
+.logo em{color:var(--cyan);font-style:normal}
+.logo-sub{font-size:11.5px;color:var(--muted);margin-bottom:22px}
+.nav a{display:block;padding:7px 12px;margin:2px 0;border-radius:8px;color:var(--muted);
+  text-decoration:none;font-size:13.5px;border-left:2px solid transparent;transition:.15s}
+.nav a:hover{color:var(--text);background:rgba(56,200,240,.06)}
+.nav a.on{color:var(--cyan);background:rgba(56,200,240,.09);border-left-color:var(--cyan)}
+.nav a .no{display:inline-block;width:24px;color:var(--cyan);opacity:.75;font-family:var(--mono);font-size:12px}
+main{margin-left:262px;padding:0 0 80px}
+.wrap{max-width:920px;margin:0 auto;padding:0 44px}
+.mtop{display:none}
+#mask{display:none}
+@media(max-width:1080px){
+  html{scroll-padding-top:62px}
+  body{font-size:15px}
+  .mtop{display:flex;position:fixed;top:0;left:0;right:0;height:52px;z-index:70;align-items:center;gap:10px;
+    padding:0 12px;background:rgba(10,15,30,.96);border-bottom:1px solid var(--line);backdrop-filter:blur(8px)}
+  .mtop .burger{width:38px;height:38px;border-radius:9px;border:1px solid var(--line);background:var(--panel);
+    color:var(--cyan);font-size:18px;line-height:1;cursor:pointer;flex:0 0 auto}
+  .mtop .mt{font-size:13.5px;color:var(--muted);font-weight:600;letter-spacing:.3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sidebar{position:fixed;top:0;left:0;bottom:0;width:282px;padding:22px 16px;overflow-y:auto;
+    transform:translateX(-105%);transition:transform .25s ease;border-right:1px solid var(--line);
+    box-shadow:0 0 50px rgba(0,0,0,.55);z-index:80}
+  .sidebar.open{transform:translateX(0)}
+  #mask{display:block;position:fixed;inset:0;background:rgba(4,8,18,.6);opacity:0;pointer-events:none;transition:opacity .2s;z-index:75}
+  #mask.show{opacity:1;pointer-events:auto}
+  main{margin-left:0;padding-top:52px}
+  .wrap{padding:0 18px}
+  .hero{padding:36px 0 26px}
+  .hero h1{font-size:25px}
+  .hero .sub{font-size:14px}
+  h2{font-size:21px}
+  h3{font-size:16.5px}
+  section{padding:38px 0 6px}
+  pre{font-size:12px;padding:12px 14px}
+  pre code{font-size:12px}
+  .step{padding:14px 14px 10px 56px}
+  .step::before{left:13px;top:14px;width:30px;height:30px;font-size:12px;border-radius:8px}
+  table{display:block;overflow-x:auto;width:auto;min-width:100%}
+  th,td{padding:7px 10px}
+  .chip{font-size:11px;padding:3px 10px}
+}
+.hero{padding:72px 0 44px;border-bottom:1px solid var(--line)}
+.hero h1{font-size:34px;line-height:1.35;font-weight:800;
+  background:linear-gradient(100deg,#e8f4ff 30%,var(--cyan) 70%,var(--purple));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.hero .sub{color:var(--muted);margin-top:14px;font-size:16px}
+.chips{display:flex;flex-wrap:wrap;gap:9px;margin-top:22px}
+.chip{font-size:12.5px;font-family:var(--mono);padding:4px 12px;border-radius:99px;
+  border:1px solid var(--line);background:var(--panel);color:var(--muted)}
+.chip.hl{border-color:rgba(56,200,240,.45);color:var(--cyan)}
+section{padding:52px 0 8px;border-bottom:1px dashed var(--line)}
+h2{font-size:25px;font-weight:750;margin-bottom:6px;display:flex;align-items:center;gap:12px}
+h2 .cn{font-family:var(--mono);font-size:13px;color:var(--cyan);border:1px solid rgba(56,200,240,.4);
+  padding:2px 10px;border-radius:6px;font-weight:600;white-space:nowrap}
+h3{font-size:18.5px;margin:34px 0 12px;color:var(--cyan2);font-weight:700}
+h4{font-size:16px;margin:24px 0 8px;color:var(--text)}
+p{margin:10px 0;color:#c3cfe8}
+ul,ol{margin:10px 0 10px 24px;color:#c3cfe8}
+li{margin:5px 0}
+strong{color:#eaf3ff}
+a{color:var(--cyan);text-decoration:none;border-bottom:1px dotted rgba(56,200,240,.4)}
+a:hover{border-bottom-style:solid}
+code{font-family:var(--mono);font-size:.86em;background:rgba(56,200,240,.09);color:var(--cyan2);
+  padding:1.5px 6px;border-radius:5px;word-break:break-all}
+pre{background:#0a101f;border:1px solid var(--line);border-radius:12px;padding:16px 18px;
+  overflow-x:auto;margin:14px 0;font-size:13px;line-height:1.7}
+pre code{background:none;padding:0;color:#c9d6ef;font-size:13px}
+.tk-c{color:#5b6b8c;font-style:italic}.tk-s{color:#9be29b}.tk-k{color:#7aa8ff}.tk-a{color:#fbbf24}
+.tk-n{color:#f0a5c8}.tk-key{color:#7adcff}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.8px}
+th{background:var(--panel2);color:var(--cyan2);text-align:left;font-weight:650}
+th,td{border:1px solid var(--line);padding:8px 12px;vertical-align:top}
+td{color:#c3cfe8}td code{white-space:nowrap}
+tr:nth-child(even) td{background:rgba(255,255,255,.015)}
+.callout{border-radius:12px;padding:14px 18px;margin:16px 0;border:1px solid;font-size:14.3px}
+.callout .t{font-weight:700;margin-bottom:4px;display:flex;gap:8px;align-items:center}
+.callout .enough{display:block;margin-top:8px;padding-top:8px;border-top:1px dashed rgba(148,163,184,.35);font-weight:700;color:var(--cyan,#38c8f0)}
+.note{background:rgba(56,200,240,.06);border-color:rgba(56,200,240,.35)}.note .t{color:var(--cyan)}
+.warn{background:rgba(251,191,36,.06);border-color:rgba(251,191,36,.4)}.warn .t{color:var(--amber)}
+.danger{background:rgba(248,113,113,.06);border-color:rgba(248,113,113,.4)}.danger .t{color:var(--red)}
+.tip{background:rgba(52,211,153,.06);border-color:rgba(52,211,153,.35)}.tip .t{color:var(--green)}
+.b{display:inline-block;font-size:11px;font-family:var(--mono);padding:1.5px 9px;border-radius:99px;
+  vertical-align:2px;margin-left:8px;font-weight:600;white-space:nowrap}
+.b-core{background:rgba(56,200,240,.14);color:var(--cyan);border:1px solid rgba(56,200,240,.4)}
+.b-adv{background:rgba(167,139,250,.14);color:var(--purple);border:1px solid rgba(167,139,250,.4)}
+.b-red{background:rgba(248,113,113,.14);color:var(--red);border:1px solid rgba(248,113,113,.45)}
+.b-lab{background:rgba(52,211,153,.14);color:var(--green);border:1px solid rgba(52,211,153,.4)}
+.b-warn{background:rgba(251,191,36,.13);color:var(--amber);border:1px solid rgba(251,191,36,.4)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(255px,1fr));gap:14px;margin:18px 0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 18px 14px;transition:.2s}
+.card:hover{border-color:rgba(56,200,240,.4);transform:translateY(-2px)}
+.card .ic{font-size:22px}.card h5{font-size:15px;margin:8px 0 6px;color:#eaf3ff}
+.card p{font-size:13.4px;margin:0;color:var(--muted)}
+.card .file{font-family:var(--mono);font-size:11.3px;color:var(--cyan);opacity:.85;display:block;margin-top:8px;word-break:break-all}
+.flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:0;margin:18px 0}
+.fnode{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 14px;
+  font-size:13px;flex:1;min-width:120px;text-align:center;display:flex;flex-direction:column;justify-content:center}
+.fnode b{color:var(--cyan2);font-size:13.4px}
+.fnode span{color:var(--muted);font-size:11.8px;font-family:var(--mono)}
+.farr{display:flex;align-items:center;padding:0 7px;color:var(--cyan);font-size:16px;flex:0 0 auto}
+.steps{counter-reset:st;margin:20px 0}
+.step{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  padding:18px 20px 14px 66px;margin:14px 0}
+.step::before{counter-increment:st;content:counter(st,decimal-leading-zero);position:absolute;left:16px;top:16px;
+  width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-weight:700;font-size:14px;color:var(--cyan);
+  background:rgba(56,200,240,.1);border:1px solid rgba(56,200,240,.4)}
+.step h5{font-size:15.5px;color:#eaf3ff;margin-bottom:6px}
+.step .where{font-family:var(--mono);font-size:11.6px;color:var(--purple);word-break:break-all;display:block;margin:2px 0 8px}
+.step p,.step li{font-size:14px}
+.wi{margin-top:8px;background:rgba(167,139,250,.05);border-left:3px solid var(--purple);
+  border-radius:0 8px 8px 0;padding:8px 14px;font-size:13.4px;color:#c8bdf2}
+.wi b{color:var(--purple)}
+.timeline{margin:22px 0;border-left:2px solid var(--line);padding-left:26px}
+.tl{position:relative;margin-bottom:26px}
+.tl::before{content:'';position:absolute;left:-33px;top:7px;width:12px;height:12px;border-radius:50%;
+  background:var(--bg);border:2.5px solid var(--cyan)}
+.tl.v2::before{border-color:var(--green)}.tl.v3::before{border-color:var(--purple)}
+.tl.v4::before{border-color:var(--pink)}
+.tl h5{font-size:16px;color:#eaf3ff}.tl h5 .ver{font-family:var(--mono);color:var(--cyan);margin-right:8px}
+.tl p{font-size:14px;margin:4px 0}
+details{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin:10px 0;overflow:hidden}
+summary{padding:11px 16px;cursor:pointer;font-size:14.3px;color:#dfe9ff;font-weight:600;list-style:none}
+summary::before{content:'▸ ';color:var(--cyan)}
+details[open] summary::before{content:'▾ '}
+details .ans{padding:2px 18px 14px;font-size:13.8px;border-top:1px dashed var(--line)}
+details .ans p{margin:8px 0}
+.svgbox{background:radial-gradient(ellipse at 50% 0%,rgba(56,200,240,.05),transparent),var(--bg2);
+  border:1px solid var(--line);border-radius:16px;padding:18px;margin:20px 0;overflow-x:auto}
+.svgbox svg{display:block;margin:0 auto;min-width:640px}
+.kv{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0}
+.kv div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 16px;flex:1;min-width:150px}
+.kv b{display:block;font-family:var(--mono);font-size:19px;color:var(--cyan)}
+.kv span{font-size:12px;color:var(--muted)}
+footer{margin-left:262px;padding:34px 44px;color:var(--muted);font-size:13px;border-top:1px solid var(--line)}
+footer .wrap{padding:0}
+@media(max-width:1080px){footer{margin-left:0}}
+.toc-hint{font-size:13px;color:var(--muted);background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;padding:10px 16px;margin:14px 0}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+
+<div class="mtop"><button id="burger" aria-label="打开目录">☰</button><span class="mt">Argus-Loom 知识库问答 · 学习教程</span></div>
+<div id="mask"></div>
+
+<aside class="sidebar">
+  <div class="logo">Argus<em>-Loom</em></div>
+  <div class="logo-sub">知识库问答 · 源码学习教程</div>
+  <nav class="nav" id="nav">
+    <a href="#ch0"><span class="no">00</span>导读 · 学习路线</a>
+    <a href="#ch1"><span class="no">01</span>方法论：架构优先</a>
+    <a href="#ch2"><span class="no">02</span>RAG 概念与企业级</a>
+    <a href="#ch3"><span class="no">03</span>项目全景 V1→V4</a>
+    <a href="#ch4"><span class="no">04</span>数据链路：ETL</a>
+    <a href="#ch5"><span class="no">05</span>问答核心 ★</a>
+    <a href="#ch6"><span class="no">06</span>进阶：Agent 与记忆</a>
+    <a href="#ch7"><span class="no">07</span>动手实验</a>
+    <a href="#ch8"><span class="no">08</span>分级自测</a>
+    <a href="#ch9"><span class="no">09</span>企业级资源地图</a>
+    <a href="#appx"><span class="no">A</span>附录 · 速查表</a>
+    <a href="#mem"><span class="no">B</span>记忆速查</a>
+  </nav>
+</aside>
+
+<main>
+<div class="wrap">
+
+<header class="hero">
+  <h1>Argus-Loom 知识库问答<br>源码学习教程</h1>
+  <p class="sub">依据 <a href="https://www.codefather.cn/post/2103044523826475009" target="_blank">《AI 时代学习开源项目的正确姿势》</a> 方法论 × 项目真实代码 × 企业级 RAG 实践，带你从"看懂"走到"能设计"。</p>
+  <div class="chips">
+    <span class="chip hl">Spring AI Alibaba 1.1.2</span><span class="chip">pgvector + ES 混合检索</span>
+    <span class="chip">Java 21 · Spring Boot 3.5</span><span class="chip">bge-small-zh 512维</span>
+    <span class="chip">ReactAgent 图引擎</span><span class="chip">预计 6–8 小时</span>
+  </div>
+</header>
+
+<!-- ============ CH0 ============ -->
+<section id="ch0">
+  <h2><span class="cn">CH 00</span>导读：这份教程怎么用</h2>
+  <p>这是一份为 <strong>argus-loom 项目本身</strong> 定制的源码学习教程。它做四件事：</p>
+  <ol>
+    <li>先用<strong>一个通俗故事</strong>把整条链路讲成大白话（0.3 节"小王的一次提问"），不碰任何代码也能听懂整个系统在干什么；</li>
+    <li>给你一套<strong>学习方法</strong>（第 1 章，来自《AI 时代学习开源项目的正确姿势》），避免"逐行翻译源码"的假性掌握；</li>
+    <li>给你<strong>足够的 RAG 领域知识</strong>（第 2 章），让你能听懂代码里每个抽象"为什么存在"；</li>
+    <li>带你<strong>沿真实代码走完两条核心链路</strong>（第 4、5 章）：文档摄入 ETL 与混合检索问答——这是本项目 20% 的核心代码。</li>
+  </ol>
+  <div class="callout warn"><div class="t">⚠️ 先泼一盆冷水</div>
+  AI 把代码解释得越流畅，你越容易产生"我懂了"的错觉。<strong>检验标准只有一个：合上所有资料，你能不能白板画出问答链路并说清每个设计取舍。</strong>第 8 章的自测就是为此准备的。</div>
+
+  <div class="callout tip"><div class="t">😵 觉得难？你多半是读反了顺序</div>
+  这份教程是<strong>两层</strong>写的：<strong>人话层</strong>（好懂，讲清"是什么、为什么"）和<strong>源码层</strong>（密集，讲清"在哪个类、怎么实现"）。第一遍你只需要走<strong>人话线</strong>：① 读 0.3 的故事（20 分钟）→ ② 第 2~7 章<strong>每章只读开头 💬 蓝框</strong>——那段本身就是完整的人话版，读完直接进下一章 → ③ 卡住的词去 0.4 黑话表查。走完这条线，"介绍你的项目"这个面试题你已经能答了。正文里的类名、行号、What-If，是第二遍对照 IDE 深挖、以及面试前复习才需要的。<strong>谁规定教程必须从第一页读到最后一页？</strong></div>
+
+  <h3>学习路线图</h3>
+  <div class="flow">
+    <div class="fnode"><b>⓪ 故事</b><span>CH0.3 · ~20min</span></div><div class="farr">→</div>
+    <div class="fnode"><b>① 概念</b><span>CH2 · ~1h</span></div><div class="farr">→</div>
+    <div class="fnode"><b>② 全景</b><span>CH3 · ~1h</span></div><div class="farr">→</div>
+    <div class="fnode"><b>③ 数据链路</b><span>CH4 · ~1h</span></div><div class="farr">→</div>
+    <div class="fnode"><b>④ 问答核心 ★</b><span>CH5 · ~2h</span></div><div class="farr">→</div>
+    <div class="fnode"><b>⑤ Agent</b><span>CH6 · ~0.5h</span></div><div class="farr">→</div>
+    <div class="fnode"><b>⑥ 实验</b><span>CH7 · ~1h</span></div><div class="farr">→</div>
+    <div class="fnode"><b>⑦ 自测</b><span>CH8 · 脱稿</span></div>
+  </div>
+
+  <h3>四条使用建议</h3>
+  <ul>
+    <li><strong>第一遍走"人话线"（约 1 小时，零代码）</strong>：0.3 故事 → 每章开头的 💬 人话导读（每段都是完整人话版，结尾有 <strong>✅ 读到这里就够了</strong> 标记，见好就收进下一章）→ 0.4 黑话表当字典查。走完这条线，你已经能"讲清自己的项目"；</li>
+    <li><strong>第二遍走"源码线"（6~8 小时）</strong>：对照 IDE 读正文。每个结论都标了 <code>类名:行号</code>（基于 commit <code>edf9753</code>，行号可能漂移，以类名+方法名为准），读到哪点到哪，每个 What-If 紫框先自己答再看解释；</li>
+    <li><strong>终点不是读完，是画出</strong>：学完第 5 章后，脱稿画一遍问答全链路，再和第 5 章开头的图对比差距；</li>
+    <li><strong>卡住 ≠ 你有问题</strong>：正文写得密是刻意的——它是查阅手册，不是小说。难的地方尽管跳，人话线会替你兜底。</li>
+  </ul>
+  <div class="toc-hint">前置要求：Java / Spring Boot 基础（依赖注入、AOP 注解的含义）、了解 LLM API 是什么。不需要提前懂向量数据库或 Elasticsearch。</div>
+
+  <h3 id="story">0.3 先听个故事：小王的一次提问 <span class="b b-core">大白话版全程</span></h3>
+  <p>代码先放一边。把整个系统想象成<strong>一家 AI 图书馆</strong>：你往里放书（上传文档），向一位"只照着书讲、绝不瞎编"的 AI 馆员提问。下面是小王完整走一遍的全过程——<strong>读懂这个故事，你就理解了这个项目 80% 在干什么</strong>；后面的章节只是把故事里每一步对应到真实代码。</p>
+
+  <h4>第一幕：把一本书搬进图书馆（对应第 4 章 · ETL）</h4>
+  <p><strong>① 交书。</strong>小王把《员工手册 v3.docx》拖进网页。文件比较大，浏览器自动把它切成小块一批批寄给服务器（<em>分片上传</em>）；寄出前先算了个"文件指纹"（SHA-256），服务器一查：这本书已经有人交过了？直接挂"已收藏"的牌子（<em>秒传</em>），不用再传一遍。</p>
+  <p><strong>② 登记入库。</strong>书本体锁进 MinIO 仓库，登记卡写进数据库，状态标成"加工中"。小王的网页立刻显示"上传成功"——他不用干等，因为加工是后厨悄悄做的（<em>异步</em>）。</p>
+  <p><strong>③ 后厨加工</strong>（一条流水线干四件事）：</p>
+  <ul>
+    <li><strong>拆字</strong>：把 Word/PDF 里的文字全部抽出来，丢掉乱码和多余空行（<em>解析 + 清洗</em>）；</li>
+    <li><strong>切卡片</strong>：把整本书切成一张张两三百字的"知识卡片"。切的时候很讲究——尽量在标题、段落处下刀，别把一句话切成两半；每张卡片还会和下一张重叠 64 个字，防止关键句刚好骑在缝上、谁都没捞着完整版（<em>结构感知切片</em>）；</li>
+    <li><strong>打语义指纹</strong>：给每张卡片算一串数字（<em>向量 / Embedding</em>），意思越近的卡片指纹越接近——这是"机器懂意思"的全部窍门；</li>
+    <li><strong>上两套书架</strong>：指纹放进 pgvector 指纹柜（按"意思"找），关键词放进 ES 索引柜（按"字面词"找）。齐活，状态改成"可借阅"（READY）。</li>
+  </ul>
+  <div class="callout note"><div class="t">📌 停一下，只需要记住三样东西</div>整条加工流水线的产出就三样：<strong>一张张知识卡片</strong>（切片）、<strong>每张卡片的语义指纹</strong>（向量）、<strong>每张卡片的关键词标签</strong>（ES 索引）。后面所有"高大上"的检索技术，本质上都是在<strong>更快更准地找到这些卡片</strong>。</div>
+
+  <h4>第二幕：小王提问（对应第 5 章 · 问答九步）</h4>
+  <p>第二天，小王在群里问了一句特别口语的话：<strong>"年假没休完会作废吗？"</strong></p>
+  <p><strong>① 过安检。</strong>请求进店先查两件事：小王是这个知识库群组的成员吗？他一分钟内是不是问太多次了？——每次提问都要花真金白银的 token，得有限流。</p>
+  <p><strong>② 查门票。</strong>馆里有些书架是财务专属，小王刷不开。系统直接把他看不到的书从候选里剔掉；如果连"能看到哪些书"的名单都拿不到，就当空手处理——<strong>宁可不给，不能给错</strong>（<em>fail-closed 权限门槛</em>）。</p>
+  <p><strong>③ 馆员先想清楚怎么找。</strong>"年假没休完会作废吗"太口语，直接拿去搜容易扑空。AI 馆员先把它改写成文档里的书面语："未休年假 处理 顺延 作废"（<em>查询规划</em>）。如果一句话里塞了两个疑问（"能顺延吗？能折现吗？"），还会拆成两个小问题分别去找。</p>
+  <p><strong>④ 两队人马同时出动。</strong>指纹队翻指纹柜，找"意思相近"的卡片；关键词队翻索引柜，找"字面匹配"的卡片。各带回 50 张候选（<em>双通道混合检索</em>）。为什么非要两队？——指纹队认得出"把钱拿回来"就是"退换"，却在 QYT-2000X 这种陌生型号前发懵；关键词队正相反。完整例子见 0.5 节。</p>
+  <p><strong>⑤ 合并榜单。</strong>两队打的分数单位不同，没法直接比大小，那就只比名次：把两份榜单按名次合并，两边都点名的卡片最靠谱，打上"双料"标记（<em>RRF 融合</em>）。</p>
+  <p><strong>⑥ 馆长终审。</strong>按设计，这里应该由一个更懂上下文的"重排模型"把最相关的卡片排到最前——但这个岗位现在坐着的还是个实习生（空实现 NoOp），只维持原顺序。插座留好了，灯泡随时能插（第 7 章实验一）。</p>
+  <p><strong>⑦ 把卡片缝回原文。</strong>命中的卡片，前后再各带一张相邻卡片一起送审——免得答案的下半句恰好写在下一张卡里（<em>邻居窗口扩展</em>）。</p>
+  <p><strong>⑧ 查货验货。</strong>这些卡片真的够回答吗？如果不够——比如馆里压根没有年假制度这本书——就<strong>直接回复"资料不足，无法回答"，一个字的 AI 都不请</strong>：不花钱，也绝不会瞎编（<em>证据评估与拒答</em>）。</p>
+  <p><strong>⑨ 请 AI 老师作答。</strong>够回答，就把卡片摊在 AI 面前，规矩讲死："只能照卡片讲，不知道就说不知道。"老师逐字给出答案，网页上一个字一个字蹦出来（<em>SSE 流式</em>）；答案后面附上出处——哪份文件、哪几张卡片，点开能看到原文（<em>引用溯源</em>）。最后记台账：问了什么、答了什么、花了多少 token（<em>落库</em>）。</p>
+  <div class="callout tip"><div class="t">✅ 顺手自测一下</div>不看上文，你能说出"为什么第⑧步的拒答判断要放在请 AI 之前"吗？——因为 AI 一旦上场就要花钱，而且面对空资料它会硬编。能在代码层拦住的事，绝不交给模型自觉。</div>
+
+  <h4>第三幕：升级版——会自己拿主意的 AI 助理（对应第 6 章 · Agent）</h4>
+  <p>固定流水线很稳，但应付不了这种问题："帮我看看我这个月工资条对不对，顺便查下公司差旅报销标准。"它需要 AI <strong>自己决定先干什么后干什么</strong>：先查工资数据（结构化查询工具）？先搜知识库（RAG）？还是上网搜（搜索工具）？这就是 Agent——给模型一个<strong>工具箱和决策权</strong>，让它像助理一样自己安排步骤。它还带两种笔记本：<strong>便签本</strong>（本次对话的上下文，聊完可丢）和<strong>员工档案</strong>（你明确让它记住的事，比如"我对花生过敏"，以后每次都会想起）。</p>
+
+  <h3>0.4 AI 黑话翻译表 <span class="b b-adv">遇到看不懂的词随时回来查</span></h3>
+  <table>
+    <tr><th style="width:24%">术语</th><th style="width:46%">人话解释</th><th>类比</th></tr>
+    <tr><td>token</td><td>AI 眼里的"字词单位"，模型的输入输出和计费都按它算</td><td>约 0.5~1.5 个汉字</td></tr>
+    <tr><td>切片（chunk）</td><td>把长文档切成的一张张知识卡片，是检索的最小单位</td><td>图书馆的知识卡</td></tr>
+    <tr><td>向量 / Embedding</td><td>给文本算出的一串数字"语义指纹"，意思越近指纹越像</td><td>指纹 / 人脸特征码</td></tr>
+    <tr><td>向量检索</td><td>拿问题的指纹，找出指纹最相近的卡片</td><td>以纹找人</td></tr>
+    <tr><td>关键词检索（BM25）</td><td>按字面词匹配找卡片，专有名词一击命中</td><td>图书馆索引柜</td></tr>
+    <tr><td>混合检索</td><td>向量 + 关键词两路一起找，互补盲区</td><td>两队人马分头找</td></tr>
+    <tr><td>召回 / topK</td><td>第一轮捞出的候选；topK=50 就是捞 50 张</td><td>海选 50 进 5</td></tr>
+    <tr><td>RRF 融合</td><td>多份榜单只按"名次"合并，不管原始分数</td><td>两家评委的排名合并算总分</td></tr>
+    <tr><td>重排（Rerank）</td><td>用更聪明的模型给候选精排，准但慢</td><td>馆长终审</td></tr>
+    <tr><td>证据评估 / 拒答</td><td>先判断找到的资料够不够回答，不够就老实说查不到</td><td>查无实据，恕不回答</td></tr>
+    <tr><td>引用溯源</td><td>答案出自哪份文件哪张卡片，可点回去看原文</td><td>论文的参考文献</td></tr>
+    <tr><td>SSE 流式</td><td>答案在网页上一个字一个字蹦出来，不用等全部生成完</td><td>打字机</td></tr>
+    <tr><td>Agent</td><td>会自己规划步骤、自己挑工具用的 AI</td><td>图书馆助理员</td></tr>
+    <tr><td>记忆（短期/长期）</td><td>本次对话的上下文 / 长期记住的用户偏好和事实</td><td>便签本 / 员工档案</td></tr>
+    <tr><td>pgvector · HNSW · cosine</td><td>存指纹的数据库 · 加速"找相似指纹"的算法 · 指纹相似度打分方式</td><td>指纹柜 / 快速比对术 / 打分规则</td></tr>
+    <tr><td>fail-closed</td><td>拿不到明确的"允许"就一律拒绝，宁可误杀不可放行</td><td>门禁刷不开就不放行</td></tr>
+    <tr><td>护轨（Guardrail）</td><td>给 AI 的输入输出加安检门，拦住乱七八糟的内容和失控的成本</td><td>机场安检</td></tr>
+    <tr><td>多租户</td><td>一套系统服务多个团队，数据互相看不见</td><td>一栋楼每户自己的钥匙</td></tr>
+  </table>
+
+  <h3>0.5 三个最常问的"为什么"（先给答案，后文章节再展开）</h3>
+  <p><strong>为什么不直接把问题丢给大模型？</strong>——大模型没读过你公司的员工手册；就算读过，它训练截止之后的更新也不知道；而且它"不知道"的时候经常一本正经地编（幻觉）。RAG 的本质就四个字：<strong>开卷考试</strong>——先找到资料，让它照着答。</p>
+  <p><strong>为什么不把整本文档直接塞给 AI，非要切卡片？</strong>——AI 一次能读的字数有限，而且按字数收费。整本塞进去又贵又慢，重点还被稀释。先粗筛卡片、再把少数几张交给 AI 细读，又快又省又准。</p>
+  <p><strong>为什么两路一起找，一路不够吗？</strong>——系统里有两支搜索小队：<strong>指纹队</strong>按"意思"找（就是 0.3 节说的语义指纹），<strong>关键词队</strong>按"字面"找（一个字都不差才命中）。单派任何一队都会翻车，而且翻车方式正好相反：</p>
+  <ul>
+    <li><strong>只派关键词队，输在"换了说法"。</strong>卡片上写的是"七天无理由<strong>退换</strong>"；小王问"东西买错了，想把<strong>钱拿回来</strong>"。意思一模一样，却没有一个相同的字——字面搜索当场扑空，什么也搜不出来。</li>
+    <li><strong>只派指纹队，输在"专有名词"。</strong>小王问"QYT-2000X 怎么退"。对一个只认"意思"的机器来说，陌生型号 QYT-2000X 和它的兄弟型号 QYT-1800S、QYT-3000 没什么两样——都是没有含义的代号，指纹几乎分不开，很可能把别的型号的退货说明排到前面，偏偏漏掉那一条。</li>
+  </ul>
+  <p>反过来看，对方的强项正好补上：关键词队搜"QYT-2000X"一击即中；指纹队能认出"钱拿回来"和"退换"是同一件事。所以<strong>两队各查 50 张、合成一张大榜</strong>：你漏掉的盲区由对方补上，"一字不差"和"意思相近"一个都不丢。这也是企业级 RAG 公认的第一优先升级项（第 2 章展开）。</p>
+</section>
+
+<!-- ============ CH1 ============ -->
+<section id="ch1">
+  <h2><span class="cn">CH 01</span>方法论：Architecture First, Code Second</h2>
+  <div class="callout note"><div class="t">⏭️ 第一遍可以跳过</div>本章讲"<strong>怎么学</strong>"，不是"项目是什么"——它治的是"假性掌握"，不解决"看不懂"。走人话线的读者请直接进第 2 章；等你开始第二遍对照源码读了再回来，那时它才有用。<span class="enough">✅ 现在跳过是对的。</span></div>
+  <p>传统学法是"逐行读源码"。AI 时代这套失效了——AI 能帮你翻译任何一行代码，于是逐行阅读变成<strong>思维惰性的遮羞布</strong>。正确姿势是：先建立系统级理解，代码只是<strong>验证架构猜想的证据</strong>。</p>
+
+  <h3>四个核心动作</h3>
+  <div class="cards">
+    <div class="card"><div class="ic">🗺️</div><h5>先系统，后代码</h5>
+      <p>先搞清：解决什么问题 → 输入输出是什么 → 分几个模块 → 数据怎么流。然后只精读 20% 的核心代码。</p></div>
+    <div class="card"><div class="ic">🛤️</div><h5>先主干，后边缘</h5>
+      <p>沿 Happy Path（一切正常的理想路径）单向追踪，重试/降级/异常分支先跳过，主干通了再回头。</p></div>
+    <div class="card"><div class="ic">❓</div><h5>追问"为什么存在"</h5>
+      <p>对每个抽象做三问：它解决什么问题？不设计它会怎样？如果是我会怎么做？——问"写了什么"是低阶学习。</p></div>
+    <div class="card"><div class="ic">✍️</div><h5>脱稿推演验证</h5>
+      <p>终极检验：脱离源码，自己画出架构图和数据流，再与真实代码对比。差距就是没学会的部分。</p></div>
+  </div>
+
+  <h3>SOP：核心链路追踪法 <span class="b b-core">套用到本项目</span></h3>
+  <table>
+    <tr><th style="width:26%">步骤</th><th>在本项目中的具体操作</th></tr>
+    <tr><td><b>1. Repository Survey</b><br>让 AI 做全景侦察</td>
+      <td>问 AI："总结 argus-loom 的模块划分、技术栈、两条核心链路的入口和出口"。产出 = 第 3 章的模块地图。（本文档已完成这一步，你直接看结论即可）</td></tr>
+    <tr><td><b>2. 找到入口</b></td>
+      <td>问答链路入口：<code>QaController.askQuestion</code>（<code>qa/controller/QaController.java:70</code>）；数据链路入口：<code>DocumentController</code> 的上传接口。</td></tr>
+    <tr><td><b>3. 沿 Happy Path 单向追踪</b></td>
+      <td>从入口往下钻：Controller → Service → 检索编排 → LLM 调用 → 响应组装。<strong>跳过</strong>所有 retry / 降级 / 异常分支（第二遍再看）。</td></tr>
+    <tr><td><b>4. 精读 20% 核心清单</b></td>
+      <td>值得逐方法精读的 5 个类：<code>HybridChunkRetrievalService</code>（检索编排）、<code>RrfFusion</code>（融合算法，纯函数最好读）、<code>EvidenceAssessor</code>（证据分级）、<code>StructureAwareChunkTransformer</code>（切片策略）、<code>QaChatService</code>（生成编排）。</td></tr>
+    <tr><td><b>5. 胶水代码交给 AI</b></td>
+      <td>DTO、Mapper、配置类、日志——让 AI 一句话总结即可，不要消耗自己的注意力。</td></tr>
+  </table>
+
+  <h3>把 AI 变成"架构导师"</h3>
+  <p>《AI 时代学习开源项目》给出了一个杀手级用法：让 AI <strong>扮演面试官拷问你，或反过来——你先盲设计，再对比真实源码</strong>。针对本项目可以直接用这个 Prompt：</p>
+  <pre><code data-lang="text">你现在是资深 RAG 系统架构师兼面试官。我正在学习 argus-loom
+（一个 Spring AI Alibaba + pgvector + ES 的企业级知识库问答项目）。
+
+规则：
+1. 每次只问我一个问题，从检索链路的入口开始，逐层深入；
+2. 我答完后：先指出答案里的错误或缺失，再给出你的参考答案（含设计权衡）；
+3. 如果我连续两题答得好，升级问题难度到"设计决策"层面
+   （例如：为什么 RRF 的 k 取 0？为什么拒答发生在调 LLM 之前？）；
+4. 不要一次给我全部答案，逼我自己推理。
+
+开始第一问：用户发来一次提问，从 HTTP 请求进来到返回答案，
+这个系统内部大概分几个阶段？每个阶段的职责是什么？</code></pre>
+
+  <h3>提问层级模型 <span class="b b-adv">自检你处在哪层</span></h3>
+  <table>
+    <tr><th style="width:15%">层级</th><th style="width:38%">问法</th><th>本项目示例</th></tr>
+    <tr><td>L1 What</td><td>这是什么？</td><td>RRF 是什么？</td></tr>
+    <tr><td>L2 How</td><td>它怎么工作的？</td><td>RRF 怎么把两路检索结果合成一路？</td></tr>
+    <tr><td>L3 Why</td><td>为什么需要它？</td><td>为什么不能只靠向量检索，非要加 ES 关键词通道？</td></tr>
+    <tr><td>L4 Design</td><td>为什么这样设计而非那样？</td><td>RRF 公式里 k=0，业界常用 k=60，取舍是什么？</td></tr>
+  </table>
+  <p>达到 L4 才算真正掌握。第 5 章的每个步骤卡都按 L1→L4 组织。</p>
+</section>
+
+<!-- ============ CH2 ============ -->
+<section id="ch2">
+  <h2><span class="cn">CH 02</span>RAG 概念与企业级实践</h2>
+  <div class="callout note"><div class="t">💬 人话导读 · 本章完整版</div>RAG 到底是个啥？一句话：<strong>让大模型开卷考试</strong>。直接问它你公司的事，它没读过你们的文档，要么说不知道、要么一本正经地编；RAG 的做法是——回答之前，先去文档库里把相关段落<strong>找出来，摊在它面前</strong>，让它照着答。<br>找资料这件事，技术上演进了三代：<strong>第一代（Naive）</strong>最笨，切块搜一下就拼给模型，口语化的问题和精确名词经常搜不准；<strong>第二代（Advanced）</strong>聪明了，查询先改写、两路检索互补、结果再重排、资料不够就拒答——<strong>本项目主要就是这一代</strong>；<strong>第三代（Modular）</strong>把检索变成 AI 可以自主调用的模块（第 6 章的 Agent 雏形）。<br>企业级系统还要加五个关键件：混合检索+RRF、重排、查询改写、拒答、效果评估——本章后面就是把这五样各讲一段，每张卡片都标了"本项目做了没有"。<span class="enough">✅ 记住"开卷考试 + 五个关键件"，本章就可以翻篇了。</span></div>
+  <h3>RAG 解决什么问题</h3>
+  <p>大模型有三个致命伤：<strong>幻觉</strong>（一本正经编造）、<strong>知识截止</strong>（训练之后的事不知道）、<strong>私有知识盲区</strong>（你公司的文档它没见过）。微调贵且慢；<strong>RAG（Retrieval-Augmented Generation，检索增强生成）</strong>的思路是：回答之前，先从你的知识库里<strong>检索</strong>出相关片段，塞进 Prompt 让模型<strong>照着证据回答</strong>。知识更新=更新文档，不用动模型。</p>
+
+  <div class="flow">
+    <div class="fnode"><b>用户提问</b><span>query</span></div><div class="farr">→</div>
+    <div class="fnode"><b>检索</b><span>retrieve</span></div><div class="farr">→</div>
+    <div class="fnode"><b>增强</b><span>拼进 Prompt</span></div><div class="farr">→</div>
+    <div class="fnode"><b>生成</b><span>LLM 照证据作答</span></div><div class="farr">→</div>
+    <div class="fnode"><b>带引用回答</b><span>citations</span></div>
+  </div>
+
+  <h3>三代 RAG 演进（本项目处在哪一代？）</h3>
+  <table>
+    <tr><th style="width:17%">阶段</th><th style="width:43%">典型特征</th><th>本项目对应</th></tr>
+    <tr><td><b>Naive RAG</b></td><td>切块 → 向量化 → topK 余弦检索 → 拼 Prompt。检索质量差：口语化查询失效、精确名词搜不到。</td><td>—（这是大多数入门教程的终点）</td></tr>
+    <tr><td><b>Advanced RAG</b></td><td>检索前后做增强：查询改写、<strong>混合检索</strong>（向量+关键词）、<strong>RRF 融合</strong>、重排、切块优化、拒答机制。</td>
+      <td><span class="b b-core">本项目主战场</span> 全部具备：QueryPlanningService、双通道+RrfFusion、RerankingService（待接真模型）、EvidenceAssessor 拒答</td></tr>
+    <tr><td><b>Modular / Agentic RAG</b></td><td>检索变成可编排的模块，由 Agent 自主决定何时检索、检索什么、是否够用；引入 GraphRAG、多跳推理。</td><td>assistant 模块的 ReactAgent 已具雏形（第 6 章）</td></tr>
+  </table>
+
+  <h3>企业级 RAG 的五个关键件 <span class="b b-core">对照记忆</span></h3>
+  <div class="cards">
+    <div class="card"><h5>① 混合检索 + RRF</h5><p>稠密向量管语义泛化（"想把钱拿回来" ≈ "退换政策"，字不重合、意思相近），BM25/关键词管精确词面（QYT-2000X 这类型号、专有名词一搜一个准）。RRF 免调参地把两路排名融合。业内公认的第一优先升级项。</p><span class="file">本项目：pgvector + ES → RrfFusion ✔</span></div>
+    <div class="card"><h5>② Cross-Encoder 重排</h5><p>召回可以"宽"，排序必须"准"。用交叉编码器对 query×chunk 逐对精算相关性，是"性价比最高的精度提升"。代价是逐对推理慢。</p><span class="file">本项目：架构在，当前 NoOp 空实现 → 实验一</span></div>
+    <div class="card"><h5>③ 查询改写</h5><p>用户问法≠文档写法。"上次说的那个东西"必须改写成可检索的查询；复合问题要拆成多个子查询。</p><span class="file">本项目：QueryPlanningService 四策略 ✔（超出多数教程）</span></div>
+    <div class="card"><h5>④ 证据评估 + 拒答</h5><p>检索不到硬证据就<strong>拒绝回答</strong>，而不是让模型自由发挥。生产环境拒答机制 = 成本控制 + 防幻觉的双重保险。</p><span class="file">本项目：EvidenceAssessor 四级评估 ✔（生产亮点）</span></div>
+    <div class="card"><h5>⑤ 评估体系</h5><p>检索侧看 precision/recall@k，生成侧看 faithfulness（忠实度）/answer similarity，RAGAS 是事实标准。没有评估就没有优化方向。</p><span class="file">本项目：qa_records 已埋点，RAGAS 未建 → 改进点</span></div>
+  </div>
+  <div class="callout note"><div class="t">📌 对照着学</div>
+  读完第 5 章你会发现：argus-loom 把上面 ①③④ 做成了完整闭环，② 留了标准接口故意空转（教学价值极高——你可以亲手把它填上，见实验一），⑤ 是明确的 roadmap 项。<strong>这份"已做/未做清单"本身就是最好的面试谈资。</strong></div>
+  <p style="font-size:12.5px;color:var(--muted)">延伸阅读：<a href="https://www.atlan.com" target="_blank">Atlan · 12 Advanced RAG Techniques</a> ·
+  <a href="https://neo4j.com" target="_blank">Neo4j · Advanced RAG for LLM apps</a> ·
+  <a href="https://dify.ai" target="_blank">Dify · Hybrid Search and Rerank</a> ·
+  <a href="https://www.promptingguide.ai" target="_blank">Prompt Engineering Guide · RAG</a></p>
+</section>
+
+<!-- ============ CH3 ============ -->
+<section id="ch3">
+  <h2><span class="cn">CH 03</span>项目全景：V1→V4 演进史</h2>
+  <div class="callout note"><div class="t">💬 人话导读 · 本章完整版</div>这个项目不是一口气写出来的，是四个版本滚出来的：<strong>V1 先管住谁能进</strong>（登录、群组权限）→ <strong>V2 让资料进得来</strong>（上传、后厨加工成知识卡片）→ <strong>V3 查得到、答得准</strong>（RAG 问答流水线）→ <strong>V4 会自己拿主意</strong>（AI 助理 Agent）。这个顺序既是开发史，也是你的学习顺序——每往后一版，都是在前面地基上加一层，没有跳跃。<br>两个必知的"避坑"，面试前一定要知道：① 项目里有个类叫 <code>RedisChunkCacheService</code>，但项目<strong>根本没装 Redis</strong>——它是个"名字骗人"的进程内缓存，面试时张口就说"我用了 Redis"会当场露馅；② 有一段权限过滤代码（DocumentRoleGate）是<strong>红线</strong>：宁可查不到、不能越权给别人看到不该看的文件，这块永远不要"优化"它。<span class="enough">✅ 四个版本的顺序 + 两个坑能说出来，本章就够了。</span></div>
+  <p><a href="https://www.codefather.cn/post/2056275623579504642" target="_blank">《我完成了一个最新的 RAG 项目》</a>正是这个项目的开发复盘。它最值得学的不是知识点，而是<strong>"每版本交付可用功能"的演进节奏</strong>——先跑通再增强。</p>
+
+  <div class="timeline">
+    <div class="tl"><h5><span class="ver">V1.0</span>地基：认证与协作群组</h5>
+      <p>JWT 双令牌（Access 30min + Refresh 轮换 httpOnly Cookie）、三级角色（USER/FINANCE/ADMIN）、<strong>群组即知识库隔离单元</strong>（邀请制+申请制）。→ 后续所有检索都强制 groupId 过滤的根源在这。</p></div>
+    <div class="tl v2"><h5><span class="ver">V2.0</span>数据引擎：文档与 ETL 流水线</h5>
+      <p>三段式分片上传（秒传/断点续传）→ 异步 ETL：解析 → 清洗 → 结构感知切片 → 向量化入 pgvector + 关键词索引入 ES。→ 第 4 章主角。</p></div>
+    <div class="tl v3"><h5><span class="ver">V3.0</span>灵魂：RAG 问答系统</h5>
+      <p>查询规划 → 双通道混合检索 → RRF 融合 → 证据四级评估 → 拒答 → JSON 结构化输出 + 引用溯源。→ 第 5 章主角，项目核心价值所在。</p></div>
+    <div class="tl v4"><h5><span class="ver">V4.0</span>进化：AI 助手与记忆</h5>
+      <p>ReactAgent 图引擎统一 CHAT / KB_SEARCH 两模式，四个工具，短期三级压缩记忆 + 长期记忆抽取。→ 第 6 章。</p></div>
+  </div>
+
+  <h3>模块地图</h3>
+  <table>
+    <tr><th style="width:22%">模块（com.argus.rag.*）</th><th style="width:14%">重要度</th><th>一句话职责</th></tr>
+    <tr><td><code>qa</code></td><td><span class="b b-core">核心</span></td><td>问答入口、混合检索编排、证据评估、引用、跨群路由</td></tr>
+    <tr><td><code>ingestion</code></td><td><span class="b b-core">核心</span></td><td>ETL 流水线：解析 → 清洗 → 切片 → 向量 + ES 索引</td></tr>
+    <tr><td><code>document</code></td><td><span class="b b-core">核心</span></td><td>上传（直传/分片/秒传）、预览下载、角色门槛</td></tr>
+    <tr><td><code>engine</code></td><td><span class="b b-core">核心</span></td><td>外部引擎适配层：pgvector / ES / MinIO / 重排 / 网络搜索</td></tr>
+    <tr><td><code>assistant</code></td><td><span class="b b-adv">进阶</span></td><td>ReactAgent、会话管理、短期/长期记忆、工具集</td></tr>
+    <tr><td><code>prompt</code> / <code>group</code> / <code>metrics</code></td><td><span class="b b-warn">支撑</span></td><td>提示模板管理 / 知识库隔离群组 / LLM 用量计量</td></tr>
+    <tr><td><code>auth</code> / <code>user</code> / <code>excel</code> / <code>finance</code></td><td><span class="b b-warn">外围</span></td><td>JWT 认证 / 用户管理 / 在线表格（本教程忽略）/ 财务工作台</td></tr>
+  </table>
+
+  <h3>技术选型的 Why（L4 层提问的答案）</h3>
+  <table>
+    <tr><th style="width:34%">决策</th><th>为什么这样，而不是那样</th></tr>
+    <tr><td><b>pgvector</b> 而非 Milvus / Pinecone</td>
+      <td>业务数据（用户/群组/文档/切片）本来就在 PostgreSQL——向量放同一个库，事务一致、一次 SQL 带 Filter 检索、零新增运维。数据规模到十亿级向量才值得引入专用向量库。</td></tr>
+    <tr><td><b>Spring Event</b> 而非 MQ</td>
+      <td>ETL 是单体内部解耦：发布方只管"文档已落库"，监听方异步处理。<code>@TransactionalEventListener(AFTER_COMMIT)</code> 保证了"先提交后触发"的时序正确性。单体阶段引入 MQ 是过度设计——等拆微服务再换 Kafka，接口不变。</td></tr>
+    <tr><td><b>本地 bge-small-zh</b> 而非远程 Embedding API</td>
+      <td>JVM 进程内 ONNX 推理：离线可用、零 API 费、无网络延迟；中文优化、512 维够用。代价：占本机 CPU、换模型需重启。</td></tr>
+    <tr><td><b>OpenAI 兼容协议</b> 统一接模型</td>
+      <td>Chat 走 <code>spring-ai-starter-model-openai</code>，指向任何兼容服务（本地 11435 / 云端 agnes-ai）。换模型 = 改 base-url + model 两个配置项，代码零改动。</td></tr>
+    <tr><td><b>ES + IK 分词</b> 做关键词通道</td>
+      <td>向量检索对型号、代码标识符、罕见专有名词天然弱势（它们在语义空间里不突出）；BM25 式词法匹配精确命中。中文场景 IK 分词是标配。</td></tr>
+  </table>
+  <div class="callout danger"><div class="t">🚨 一个"名不副实"的陷阱</div>
+  类 <code>RedisChunkCacheService</code>（excel 模块）名字里有 Redis，但项目里<strong>没有任何 Redis 依赖</strong>——它是进程内有界 LRU+TTL 缓存。别被名字骗了，也别在面试里说错。</div>
+  <div class="callout danger"><div class="t">🚨 安全红线</div>
+  <code>DocumentRoleGate.allowedDocumentIds</code> 是检索层授权的唯一入口，<strong>fail-closed</strong>（拿不到白名单就返回空，宁可误杀不可放行）。项目规定不得改动该判定实现。</div>
+</section>
+
+<!-- ============ CH4 ============ -->
+<section id="ch4">
+  <h2><span class="cn">CH 04</span>数据链路：文档如何变成可检索的知识 <span class="b b-core">V2 · ETL</span></h2>
+  <div class="callout note"><div class="t">💬 人话导读 · 本章完整版</div>这一章讲图书馆的"后厨"：一本书怎么从"一个文件"变成"能被搜到的知识"。流程像食品加工——<strong>验收入库</strong>（传到 MinIO 仓库）→ <strong>拆包装</strong>（从 Word/PDF 抽出纯文字）→ <strong>切卡片</strong>（两三百字一张的知识卡）→ <strong>贴两张标签</strong>（语义指纹进 pgvector、关键词进 ES）→ <strong>上架</strong>。这章最容易卡住的是三个"为什么"，答案现在直接给你：<br>① <strong>卡片为什么要重叠？</strong>关键句可能刚好骑在两张卡片的分界线上，各占一半，谁都搜不全——重叠让相邻卡片都保有完整关键句，至少命中一张；<br>② <strong>加工为什么在后台悄悄做？</strong>上传的人不该干等几分钟加工时间——网页立刻显示"上传成功"，加工完自动把状态改成"可借阅"；<br>③ <strong>加工失败重试，为什么不会产生重复数据？</strong>每张卡片都有写死的"身份证号"（文档号+序号派生），重试再写也只占同一个坑，不会多出一张卡。<span class="enough">✅ 这三个"为什么"能答出来，第 4 章就可以翻篇了。</span></div>
+  <p>一条知识文档从上传到能被检索到，要经过"两段旅程"：<strong>同步的上传落库</strong> + <strong>异步的 ETL 加工</strong>。这一章走第一段和第二段的前台。</p>
+
+  <h3>4.1 上传：三段式分片协议</h3>
+  <div class="flow">
+    <div class="fnode"><b>init</b><span>POST /upload/init<br>算 SHA-256 秒传检查</span></div><div class="farr">→</div>
+    <div class="fnode"><b>chunks</b><span>PUT /upload/chunks<br>分片顺序上传</span></div><div class="farr">→</div>
+    <div class="fnode"><b>complete</b><span>POST /{id}/complete<br>合并 → MinIO → 触发 ETL</span></div>
+  </div>
+  <ul>
+    <li>≤10MB 走直传 <code>POST /api/documents/upload</code>；上限 256MB 走分片。<code>UploadInputGuard</code> 只放行 txt/md/pdf/docx。</li>
+    <li><strong>秒传</strong>：init 时前端算好文件 SHA-256，服务端发现同群组已存在同 hash 的 READY 文档，直接复用，跳过整个上传+ETL。</li>
+  </ul>
+  <div class="wi"><b>What-If：</b>去掉 file_hash 查重会怎样？——用户重复上传同一份 200MB 的 PDF，产生双倍存储 + 双倍 ETL + 检索时同一段内容被命中两次、引用重复。查重是花一行代码省一整条链路的钱。</div>
+
+  <h3>4.2 异步触发：事件驱动的正确姿势</h3>
+  <pre><code data-lang="java">// DocumentIngestionAsyncListener.java:46
+@Async("taskExecutor")
+@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+public void onIngestionRequested(DocumentIngestionRequestedEvent event) {
+    documentIngestionAsyncService.ingest(event.documentId());
+}</code></pre>
+  <ul>
+    <li><code>@Async</code>：HTTP 请求线程立刻返回，ETL 在线程池里跑，用户不用等 30 秒的 PDF 解析。</li>
+    <li><code>AFTER_COMMIT</code>：等上传事务<strong>真正提交后</strong>才发事件。</li>
+  </ul>
+  <div class="wi"><b>What-If：</b>换成普通 <code>@EventListener</code> 会怎样？——事件在事务提交前发布，监听器异步执行时可能<strong>读不到文档行</strong>（另一个连接看不到未提交数据），ETL 空跑报"文档不存在"，还是偶发的、测试环境永远复现不了的那种。</div>
+
+  <h3>4.3 ETL 流水线：五种格式进，两种索引出</h3>
+  <div class="flow">
+    <div class="fnode"><b>MinIO 下载</b><span>StoredObject-DocumentReader</span></div><div class="farr">→</div>
+    <div class="fnode"><b>解析</b><span>ParserFactory<br>txt/md/pdf/docx</span></div><div class="farr">→</div>
+    <div class="fnode"><b>清洗</b><span>TextCleanup-Transformer</span></div><div class="farr">→</div>
+    <div class="fnode"><b>切片 ★</b><span>StructureAware-ChunkTransformer</span></div><div class="farr">→</div>
+    <div class="fnode"><b>落库</b><span>document_chunks</span></div><div class="farr">→</div>
+    <div class="fnode"><b>双索引</b><span>pgvector + ES</span></div>
+  </div>
+  <ul>
+    <li>解析用<strong>工厂+策略</strong>：<code>DocumentParserFactory</code> 按扩展名路由到 4 个解析器（PDF 用 PDFBox、DOCX 用 POI），新增格式=新增一个实现类+注册一行。</li>
+    <li>整条链路由 <code>EtlDocumentIngestionProcessor</code> 编排，外面包着 <code>@Retryable(maxAttempts=3, backoff 2s/4s/8s)</code>，三次全败 <code>@Recover</code> 兜底把文档标记 FAILED（可手动 retry-ingestion）。</li>
+    <li>向量化写入是<strong>幂等</strong>的：先按 documentId 删旧向量再写；向量主键是 <code>UUID(documentId:chunkIndex)</code> 派生的稳定 ID。</li>
+  </ul>
+  <div class="wi"><b>What-If：</b>用随机 UUID 做向量主键会怎样？——重试时同一批切片写两遍，向量库出现重复条目，检索时同一段内容占掉两个 topK 名额、RRF 分数翻倍。幂等键 = 可安全重试的前提。</div>
+
+  <h3>4.4 结构感知切片 ★（本项目最值得精读的算法类之一）</h3>
+  <p><code>StructureAwareChunkTransformer</code>（策略标识 <code>structure-aware-token-budget-v1</code>）的切分是<strong>四级降级</strong>的：</p>
+  <div class="flow">
+    <div class="fnode"><b>① Markdown 标题</b><span>按章节切<br>跳过代码块内的#</span></div><div class="farr">→</div>
+    <div class="fnode"><b>② 空行段落</b><span>章节内<br>按段落切</span></div><div class="farr">→</div>
+    <div class="fnode"><b>③ 中英句子</b><span>。！？；!?;<br>句子为最小单位</span></div><div class="farr">→</div>
+    <div class="fnode"><b>④ 硬截断</b><span>maxTokens×2<br>保底不超限</span></div>
+  </div>
+  <div class="kv">
+    <div><b>240</b><span>目标 token（实现按字符直算）</span></div>
+    <div><b>320</b><span>单块上限 token</span></div>
+    <div><b>32</b><span>相邻块重叠 token（=64 字）</span></div>
+    <div><b>×2</b><span>chars-per-token（重叠/硬截断用）</span></div>
+  </div>
+  <ul>
+    <li><strong>为什么要"结构感知"</strong>：菜鸟切法按固定长度硬切，会把"3.2 退货流程"的标题和正文切进两个块，两块的语义都残废。先沿标题/段落切，块天然语义完整。</li>
+    <li><strong>为什么要重叠 32 token</strong>：关键句恰好跨在切块边界上时，两个块各带一半；重叠让边界两侧的块都保有完整关键句，检索至少能命中一个。</li>
+    <li>metadata 里写入 <code>sectionPath / charStart / charEnd / chunkStrategy</code>，给后面"邻居窗口扩展"用。</li>
+  </ul>
+  <div class="callout note"><div class="t">❓ 480 和 64 这两个数字是怎么来的？</div>
+  出处都在 <code>application-local.yml</code> 的 <code>ingestion.chunking</code>：<code>target-tokens: 240</code>（卡片目标）、<code>max-tokens: 320</code>（单卡上限）、<code>overlap-tokens: 32</code>（重叠）、<code>chars-per-token: 2</code>（换算系数）。<strong>480 = 240×2</strong>，是把"一张卡的 token 预算"换算成中文字数的口径；<strong>64 = 32×2</strong>，这个是代码实打实执行的——<code>StructureAwareChunkTransformer.java:249</code> 把每张卡的开头向前拉回 64 个字符，包住前一张卡的结尾。<br>
+  <strong>为什么目标定 240 token？</strong>往两边推都会变差：太大，一张卡挤进多个主题，语义指纹成"平均脸"，哪个主题都搜不准，塞进 Prompt 还贵；太小，一句话一张卡，上下文断裂、卡片数量爆炸。240/320 落在中文 RAG 的甜点区；而且 bge-small-zh 单次最多吃 512 token，240 加上余量，保证每张卡都能完整算出指纹、不被截断。<br>
+  <strong>为什么重叠定 32 token？</strong>它是"关键句骑缝"的保险——32 token 约一两句话，刚好把骑在边界上的句子完整包进相邻卡片；约占卡片预算的 13%，再大就是纯浪费（业界常见重叠 10%~20%）。<br>
+  <strong>⚠️ 防露馅的实现细节</strong>：<code>estimateTokens</code> 的实现是 <code>text.length()</code>（<code>StructureAwareChunkTransformer.java:321</code>）——预算检查把<strong>字符数直接当 token 数</strong>用。所以主体路径实际切出的卡是<strong>约 240~320 字</strong>，而不是 480 字；只有完全没标点的超长文本才走硬截断，步长 320×2=640 字。有意思的是这个简化反而歪打正着：bge 对中文大致"一字一 token"，240 字 ≈ 240 token，恰好贴近真实分词。面试被追问"切块大小怎么定的"，能说出这段的人不多。</div>
+  <div class="wi"><b>What-If：</b>切片从 240 token 加大到 2000 会怎样？——单块信息更全，但：检索粒度变粗（命中的块一半是噪音）、Prompt 塞不下几块、embedding 对长文本的语义表征稀释。切块大小是<strong>召回精度 vs 上下文信息量</strong>的杠杆，没有标准答案，只有用评估集调出来的平衡点。</div>
+  <div class="callout tip"><div class="t">✅ 第 4 章检查点</div>你能不看书回答：为什么 ETL 必须等事务提交？为什么切片要重叠？为什么向量主键要用 documentId 派生而不是随机 UUID？——三个都能答，进入第 5 章。</div>
+</section>
+
+<!-- ============ CH5 ============ -->
+<section id="ch5">
+  <h2><span class="cn">CH 05</span>问答核心：一次提问的完整旅程 <span class="b b-core">V3 · 项目灵魂</span></h2>
+  <div class="callout note"><div class="t">💬 人话导读 · 本章人话版在 0.3</div><strong>别被 11 个方框吓到</strong>：第 0.3 节"小王的一次提问"第二幕就是本章的完整人话版——过安检、查门票、想检索词、两队找卡片、合并榜单、馆长终审、缝卡片、验货、AI 作答，九步一步不少。<strong>读懂了故事，这章你已经"懂了"。</strong>下面的步骤卡只是在每一步旁边补两样东西：这段活儿由哪个类干（类名:行号），以及"不这么做会死在哪儿"（What-If 紫框）。第一遍只扫每张卡的加粗句就够了；What-If 留给第二遍。<span class="enough">✅ 故事能复述 = 本章已通关，正文当字典用。</span></div>
+  <p>这是全教程最重要的一章。先看全景图（建议学完脱稿重画一遍），再逐步拆解。</p>
+
+  <div class="svgbox">
+  <svg viewBox="0 0 880 880" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg" font-family="Consolas,monospace">
+    <defs>
+      <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#38c8f0"/></marker>
+      <marker id="arR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#f87171"/></marker>
+    </defs>
+    <g font-size="13" text-anchor="middle">
+      <!-- 1 -->
+      <rect x="270" y="12" width="340" height="46" rx="10" fill="#121b30" stroke="#38c8f0" stroke-width="1.4"/>
+      <text x="440" y="32" fill="#7adcff">① 用户提问</text>
+      <text x="440" y="50" fill="#8fa0c0" font-size="11">POST /api/qa/ask · /stream-ask (SSE) · @RateLimit 20次/分</text>
+      <line x1="440" y1="58" x2="440" y2="82" stroke="#38c8f0" marker-end="url(#ar)"/>
+      <!-- 2 -->
+      <rect x="250" y="84" width="380" height="44" rx="10" fill="#121b30" stroke="#203052"/>
+      <text x="440" y="103" fill="#d9e2f5">② 群组权限校验 · 流缓存防重复扣费</text>
+      <text x="440" y="120" fill="#8fa0c0" font-size="11">QaService → requireGroupReadable（非成员直接拒绝）</text>
+      <line x1="440" y1="128" x2="440" y2="152" stroke="#38c8f0" marker-end="url(#ar)"/>
+      <!-- 3 -->
+      <rect x="235" y="154" width="410" height="44" rx="10" fill="#1a1220" stroke="#f87171" stroke-width="1.4"/>
+      <text x="440" y="173" fill="#f87171">③ 角色门槛 DocumentRoleGate ★红线</text>
+      <text x="440" y="190" fill="#8fa0c0" font-size="11">fail-closed：拿不到可读文档白名单 → 直接空结果</text>
+      <line x1="440" y1="198" x2="440" y2="222" stroke="#38c8f0" marker-end="url(#ar)"/>
+      <!-- 4 -->
+      <rect x="220" y="224" width="440" height="48" rx="10" fill="#121b30" stroke="#a78bfa" stroke-width="1.4"/>
+      <text x="440" y="244" fill="#c4b5fd">④ 查询规划 QueryPlanningService（LLM）</text>
+      <text x="440" y="262" fill="#8fa0c0" font-size="11">DIRECT / REWRITE 改写 / DECOMPOSE 拆分 / GLOBAL 全库 · 最多 3 条 · 失败回退 DIRECT</text>
+      <line x1="440" y1="272" x2="440" y2="296" stroke="#38c8f0" marker-end="url(#ar)"/>
+      <!-- fork -->
+      <line x1="440" y1="296" x2="220" y2="330" stroke="#38c8f0" marker-end="url(#ar)"/>
+      <line x1="440" y1="296" x2="660" y2="330" stroke="#38c8f0" marker-end="url(#ar)"/>
+      <!-- 5a -->
+      <rect x="70" y="332" width="300" height="66" rx="10" fill="#0f1d2b" stroke="#38c8f0" stroke-width="1.4"/>
+      <text x="220" y="356" fill="#7adcff">⑤A 向量通道（语义）</text>
+      <text x="220" y="374" fill="#8fa0c0" font-size="11">PgVectorRetrievalAdapter · HNSW cosine</text>
+      <text x="220" y="390" fill="#8fa0c0" font-size="11">FilterExpression 强制 groupId · topK=50</text>
+      <!-- 5b -->
+      <rect x="510" y="332" width="300" height="66" rx="10" fill="#161226" stroke="#a78bfa" stroke-width="1.4"/>
+      <text x="660" y="356" fill="#c4b5fd">⑤B 关键词通道（词面）</text>
+      <text x="660" y="374" fill="#8fa0c0" font-size="11">Elasticsearch · IK 中文分词 · 加权+rescore</text>
+      <text x="660" y="390" fill="#8fa0c0" font-size="11">挂了自动降级返回空 · topK=50</text>
+      <line x1="220" y1="398" x2="400" y2="438" stroke="#38c8f0" marker-end="url(#ar)"/>
+      <line x1="660" y1="398" x2="480" y2="438" stroke="#38c8f0" marker-end="url(#ar)"/>
+      <!-- 6 -->
+      <rect x="290" y="440" width="300" height="48" rx="10" fill="#121b30" stroke="#38c8f0" stroke-width="1.4"/>
+      <text x="440" y="460" fill="#7adcff">⑥ RRF 融合排序</text>
+      <text x="440" y="478" fill="#8fa0c0" font-size="11">rankScore = 1/(k+rank) · k=0 · 标记 VECTOR/KEYWORD/BOTH</text>
+      <line x1="440" y1="488" x2="440" y2="512" stroke="#38c8f0" marker-end="url(#ar)"/>
+      <!-- 7 -->
+      <rect x="270" y="514" width="340" height="48" rx="10" fill="#121b30" stroke="#fbbf24" stroke-width="1.4"/>
+      <text x="440" y="534" fill="#fbbf24">⑦ 重排 RerankingService</text>
+      <text x="440" y="552" fill="#8fa0c0" font-size="11">架构在 · 当前 NoOp 空实现保序 · 失败回退 RRF 序</text>
+      <line x1="440" y1="562" x2="440" y2="586" stroke="#38c8f0" marker-end="url(#ar)"/>
+      <!-- 8 -->
+      <rect x="250" y="588" width="380" height="44" rx="10" fill="#121b30" stroke="#203052"/>
+      <text x="440" y="607" fill="#d9e2f5">⑧ 聚类 + 邻居窗口扩展</text>
+      <text x="440" y="624" fill="#8fa0c0" font-size="11">同文档连续切片聚簇 · 前后各扩 1 片恢复上下文</text>
+      <line x1="440" y1="632" x2="440" y2="656" stroke="#38c8f0" marker-end="url(#ar)"/>
+      <!-- 9 -->
+      <rect x="230" y="658" width="420" height="48" rx="10" fill="#0f2019" stroke="#34d399" stroke-width="1.4"/>
+      <text x="440" y="678" fill="#6ee7b7">⑨ 证据评估 EvidenceAssessor</text>
+      <text x="440" y="696" fill="#8fa0c0" font-size="11">NONE / WEAK / PARTIAL / SUFFICIENT · BOTH 印证或 topScore≥0.85</text>
+      <!-- refuse branch -->
+      <line x1="650" y1="682" x2="740" y2="682" stroke="#f87171" marker-end="url(#arR)"/>
+      <rect x="742" y="658" width="126" height="48" rx="10" fill="#1a1220" stroke="#f87171"/>
+      <text x="805" y="677" fill="#f87171" font-size="12">拒答</text>
+      <text x="805" y="694" fill="#8fa0c0" font-size="10">不调 LLM 省钱防幻觉</text>
+      <line x1="440" y1="706" x2="440" y2="730" stroke="#38c8f0" marker-end="url(#ar)"/>
+      <!-- 10 -->
+      <rect x="220" y="732" width="440" height="48" rx="10" fill="#161226" stroke="#a78bfa" stroke-width="1.4"/>
+      <text x="440" y="752" fill="#c4b5fd">⑩ Prompt 拼装 + LLM 生成</text>
+      <text x="440" y="770" fill="#8fa0c0" font-size="11">system.st 强制 JSON{answered,answer,reasonCode} · agnes-3.0-flash · 45s 超时</text>
+      <line x1="440" y1="780" x2="440" y2="804" stroke="#38c8f0" marker-end="url(#ar)"/>
+      <!-- 11 -->
+      <rect x="230" y="806" width="420" height="44" rx="10" fill="#0f2019" stroke="#34d399"/>
+      <text x="440" y="825" fill="#6ee7b7">⑪ 引用组装 → 落库 qa_records + citations</text>
+      <text x="440" y="842" fill="#8fa0c0" font-size="11">token/费用/延迟入 metrics · SSE: token* → citations → record</text>
+    </g>
+  </svg>
+  </div>
+
+  <h3>逐步拆解（每步四件套：做什么 / 在哪 / 为什么 / 反事实）</h3>
+  <div class="steps">
+
+    <div class="step"><h5>入口与限流</h5>
+      <span class="where">qa/controller/QaController.java:70(同步) :82(SSE) → QaService.java:86/:150</span>
+      <p>两个入口共用一套内部逻辑：<code>/ask</code> 同步一次性返回，<code>/stream-ask</code> 用 SSE 逐 token 推送。<code>@RateLimit</code> 限 20 次/分钟——每次问答都要花真金白银的 LLM tokens，限流是<strong>成本护栏</strong>。流式路径对 token 流做了 <code>.cache()</code>，防止重复订阅导致重复扣费。</p>
+      <div class="wi"><b>What-If：</b>去掉 <code>.cache()</code>？——框架重订阅一次 Flux（如超时重试、日志订阅），LLM 就被调两次，费用×2 且两次回答不一致。</div></div>
+
+    <div class="step"><h5>查询规划：先想清楚怎么查</h5>
+      <span class="where">qa/service/QueryPlanningService.java:62 → prompts/query-planning/user.st</span>
+      <p>检索前先用一次<strong>便宜的 LLM 调用</strong>给问题定策略，四选一：<code>DIRECT</code> 直接查 / <code>REWRITE</code> 口语改写成文档语言 / <code>DECOMPOSE</code> 复合问题拆成 2–3 个子查询 / <code>GLOBAL</code> 全库概览类问题走全文首切片。最多产出 3 条 plannedQuery。<strong>规划 LLM 挂了自动回退 DIRECT</strong>——主链路永不因辅助功能而断。</p>
+      <div class="wi"><b>What-If：</b>不做查询规划？——用户问"上次那个报销流程和新的有啥区别"（口语+复合），原句直接查向量库基本失效。查询改写是企业级 RAG 里<strong>投入产出比第二高</strong>的组件（仅次于混合检索）。</div></div>
+
+    <div class="step"><h5>双通道检索：语义 + 词面互补</h5>
+      <span class="where">qa/rag/HybridChunkRetrievalService.java:174 → engine/pgvector/PgVectorRetrievalAdapter.java:73 + engine/elasticsearch/ElasticsearchChunkIndexService</span>
+      <p>每条 plannedQuery 同时打两路，各取 topK=50：<br>
+      <b>向量通道</b>：Spring AI <code>VectorStore.similaritySearch</code>，HNSW 索引 + cosine 距离，<code>FilterExpression</code> 强制带 groupId；Java 层对结果<strong>二次校验 groupId</strong>（双保险防跨组数据泄露）。注意：未配置 similarityThreshold，即不在检索层做相似度截断，低质量召回留给证据评估层兜底。<br>
+      <b>关键词通道</b>：ES bool 初排 + rescore 精排，fileName/chunkText 多字段加权，分数 log1p 归一化到 [0,1]。<strong>ES 挂了降级返回空</strong>，问答照常（只剩向量通道），不中断服务。</p>
+      <div class="wi"><b>What-If：</b>只留向量通道？——用户搜"QYT-2000X 型号参数"，陌生型号在语义空间里和 QYT-1800S、QYT-3000 等兄弟型号挤在一起，指纹分不开；BM25 按"字面"一击命中。反过来只留关键词通道？——用户问"东西买错了想把钱拿回来"，卡片上写的是"退换政策"，字面一个字都对不上，什么都搜不出来。<strong>两路不是冗余，是互补。</strong></div></div>
+
+    <div class="step"><h5>RRF 融合：把两路排名合成一路</h5>
+      <span class="where">qa/support/RrfFusion.java:32（纯函数，强烈建议精读）→ qa/rag/RetrievalCandidate.java:56</span>
+      <p>Reciprocal Rank Fusion：<code>rankScore = Σ 1/(k + rank)</code>，本项目 <b>k=0</b>。每路只贡献"排名"，不看原始分数——天然规避了"向量余弦分和 ES 相关分单位不同没法直接加"的问题。同一 chunk 被两路都命中时分数累加，并标记 <code>retrievalSource=BOTH</code>——这个标记是后面证据评估判 <code>SUFFICIENT</code> 的关键输入。</p>
+      <div class="wi"><b>What-If ①：</b>直接把两路分数归一化后加权相加？——要调权重、要处理两种分数分布的差异，一个超参错了全盘皆输；RRF 零参数。本期 k=0（纯排名倒数）而论文常用 k=60（削弱第一名通吃、给尾部更多机会）：本项目单通道 topK=50 已很大、后续还有重排和聚类，头部强相关不应被"平均主义"稀释，k=0 是有意识的取舍。<b>What-If ②：</b>删掉 RRF？——BOTH 交叉印证信号消失，证据评估失去最可靠的"充分"判据，拒答误判率上升。</div></div>
+
+    <div class="step"><h5>重排：留了插座，灯泡还没装</h5>
+      <span class="where">engine/reranking/RerankingService.java:32 + RerankingConfiguration.java:14（@ConditionalOnMissingBean 兜底）</span>
+      <p>召回 50 条 → 取前 RECALL_K=50 过重排器 → 精排出 topK=5 进上下文。重排器接口的唯一实现是 <code>RerankingService.NoOp</code>：给所有候选打相同分、保持 RRF 顺序——<strong>整条链路行为等价于"没重排"</strong>，但接口、调用点、降级路径（重排失败回退 RRF 序）全部就绪。这是典型的<strong>预留扩展点</strong>设计。</p>
+      <div class="wi"><b>What-If：</b>为什么先 NoOp 而不直接接模型？——Cross-Encoder 要额外模型资源（GPU/显存）和 50×query 的逐对推理延迟。架构先立骨架，等评估证明"重排带来的精度收益 &gt; 延迟成本"再插上真模型（实验一教你插）。</div></div>
+
+    <div class="step"><h5>聚类与邻居窗口：把切碎的语义缝回去</h5>
+      <span class="where">qa/rag/RetrievalClusterBuilder + EvidenceDocumentAssembler.java:49</span>
+      <p>命中切片在向量空间里彼此邻近的、来自同一文档的，聚成一簇；每条证据再<strong>向前向后各扩 1 个切片</strong>（DEFAULT_NEIGHBOR_WINDOW=1），用 charStart/charEnd 定位邻居。最终证据文本 = "文件名：xxx\n窗口切片拼接"，并打上 evidenceId（E1、E2…）。</p>
+      <div class="wi"><b>What-If：</b>去掉邻居扩展？——切片按 240 token 切，"赔偿标准"的表格很可能跨在第 37、38 两块之间；只送第 37 块进 Prompt，模型看到半张表。邻居窗口是<strong>花最小 token 成本修复切块副作用</strong>的手段。另有 DOCUMENT_COVERAGE 模式：问题含"每个文档/所有文档"时，每文档保底送 1 条，防止单文档霸榜。</div></div>
+
+    <div class="step"><h5>证据评估与拒答：知道"不知道" <span class="b b-red">生产亮点</span></h5>
+      <span class="where">qa/rag/EvidenceAssessor.java:38 → qa/model/EvidenceLevel（NONE/WEAK/PARTIAL/SUFFICIENT）</span>
+      <p>纯函数评估证据包质量：候选同时命中双通道（BOTH）或最高分 ≥0.85 → SUFFICIENT；全无候选 → NONE。判级结果转成 <code>evidenceGuidance</code> 约束语注入 Prompt。关键规则：<strong>NONE/严重不足 → 直接返回 <code>INSUFFICIENT_EVIDENCE</code>，根本不调 LLM</strong>。</p>
+      <div class="wi"><b>What-If：</b>删掉证据评估？——检索到 0 条时也把空上下文塞给 LLM，模型要么幻觉编造、要么浪费一次必然无用的调用。拒答前置 = <strong>省钱（最坏情况零 token 消耗）+ 防幻觉（最强约束）</strong>的双保险，这是本项目最"企业级"的一笔。</div></div>
+
+    <div class="step"><h5>Prompt 拼装与生成：约束出结构化答案</h5>
+      <span class="where">prompts/qa/system.st + user.st + rag-context.st → qa/config/QaChatClientConfiguration.java:110（Advisor 链）</span>
+      <p>双层模板：system 要求"只能依据给定证据回答，严格输出 JSON <code>{answered, answer, reasonCode, reasonMessage}</code>"；user 模板填入问题 + 证据等级 + 约束语。证据块由 <code>RetrievalAugmentationAdvisor</code>（Spring AI 的 RAG 适配器）注入——但本项目是<strong>预取模式</strong>：检索结果经 <code>PREFETCHED_DOCUMENTS_CONTEXT_KEY</code> 直接传入，advisor 不再自己检索，<strong>避免链路跑两遍检索</strong>。同步路径 JSON 解析失败有回退解析器（不二次调 LLM）；流式路径换成纯文本 prompt 逐 token 吐出，超时 45s。</p>
+      <div class="wi"><b>What-If：</b>答案里直接写 [E1] [E2] 引用角标？——LLM 编号经常错、漏、串（幻觉重灾区）。本项目答案正文零引用，引用由后端 <code>CitationAssembler</code> 从证据 metadata 确定性组装——<strong>引用是算出来的，不是生成出来的</strong>，100% 可溯源。</div></div>
+
+    <div class="step"><h5>落库与计量：每一次问答都是数据资产</h5>
+      <span class="where">qa/service/QaRecordPersistenceService → V1__init_core_schema.sql:625(qa_records) :651(qa_record_citations)</span>
+      <p>问答对、证据等级、引用快照（documentId/chunkId/区间/文件名）、token 用量、延迟、模型名全部落库；SSE 事件序：token* → citations → evidence-overview → record。这些数据是未来做评估体系（第 2 章企业级要素⑤）和 bad case 分析的原料。</p></div>
+  </div>
+
+  <h3>关键参数速查 <span class="b b-core">背下来</span></h3>
+  <table>
+    <tr><th>参数</th><th>值</th><th>含义</th></tr>
+    <tr><td><code>CHANNEL_TOP_K</code></td><td>50 / 通道</td><td>向量和 ES 各召回 50 条</td></tr>
+    <tr><td>RRF <code>k</code></td><td>0</td><td>纯排名倒数融合（业界常用 60）</td></tr>
+    <tr><td><code>RECALL_K → context topK</code></td><td>50 → 5</td><td>重排后取 5 条进 Prompt（QA 默认）</td></tr>
+    <tr><td>similarityThreshold</td><td>未设置（0）</td><td>检索层不截断，交给证据评估兜底</td></tr>
+    <tr><td>邻居窗口</td><td>前后各 1 切片</td><td>修复切块边界副作用</td></tr>
+    <tr><td>拒答阈值</td><td>BOTH 印证 或 topScore ≥ 0.85</td><td>判 SUFFICIENT；不足直接拒答</td></tr>
+    <tr><td>多库路由</td><td>max-groups=3, 每组 top3 / 总 top12</td><td>AI 助手跨知识库检索配额</td></tr>
+  </table>
+
+  <details><summary>一次真实问答的响应长什么样？（点开看）</summary><div class="ans">
+<pre><code data-lang="json">{
+  "success": true,
+  "data": {
+    "answered": true,
+    "answer": "根据《员工手册v3》，年假未休完可顺延至次年3月31日……",
+    "reasonCode": "EVIDENCE_SUFFICIENT",
+    "citations": [
+      { "documentId": 42, "chunkId": 187, "chunkIndex": 12,
+        "fileName": "员工手册v3.docx", "score": 0.91, "groupId": 3 }
+    ],
+    "evidenceOverview": { "level": "SUFFICIENT", "evidenceCount": 4 },
+    "recordId": 881
+  }
+}</code></pre>
+  <p>检索不到时：<code>answered:false, reasonCode:"INSUFFICIENT_EVIDENCE"</code>，answer 为拒答话术，citations 为空，且这次调用<strong>没有消耗任何 LLM token</strong>。</p></div></details>
+
+  <div class="callout tip"><div class="t">✅ 第 5 章检查点（终极验收）</div>找张白纸，脱稿画出 11 步链路图，并回答：RRF 为什么免调参？拒答为什么放在 LLM 之前？引用为什么由代码组装而不是让模型写？——全对，你就超过了 90% 只"看过"RAG 教程的人。</div>
+</section>
+
+<!-- ============ CH6 ============ -->
+<section id="ch6">
+  <h2><span class="cn">CH 06</span>进阶：AI 助手 Agent 与记忆体系 <span class="b b-adv">V4</span></h2>
+  <div class="callout note"><div class="t">💬 人话导读 · 本章完整版</div>第 5 章的问答是条<strong>固定流水线</strong>：进来 → 查 → 答，每一步做什么都是程序员提前写死的。但有的问题它接不住——"帮我看看这个月工资对不对，顺便查下差旅报销标准"，得先查工资数据、再搜知识库，先做哪个没人提前知道。<strong>Agent 就是把"决定下一步干什么"的权力交给 AI</strong>：给它一个工具箱（本项目 4 个工具：查数据库、搜知识库等），它<strong>想一步、干一步、看结果、再想下一步</strong>，直到把事办完——最多兜 10 圈，防止它原地转不出来。记忆则是它的两种笔记本：<strong>便签本</strong>（本次对话的上下文，聊完可丢，太厚了自动缩写）和<strong>员工档案</strong>（你明确让它记住的事，比如"我对花生过敏"，以后每次都会想起）。<span class="enough">✅ "工具箱 + 决策权 + 两种笔记本"能说清，本章就够了。</span></div>
+  <p>第 5 章的问答是一条<strong>固定流水线</strong>：进 → 检索 → 出。但"帮我看看这个月工资条有没有问题，顺便查下公司差旅政策"这种问题，需要模型<strong>自己决定</strong>先查表还是先查库——这就是 Agent 的价值：<strong>把"何时检索、检索什么"的决定权交给模型</strong>。</p>
+
+  <h3>ReactAgent 图引擎</h3>
+  <pre><code data-lang="java">// assistant/agent/AssistantReactAgentFactory.java:61（节选）
+ReactAgent.builder()
+    .model(chatModel)
+    .instruction(...)
+    .hooks(shortTermMemoryHook)     // BEFORE_MODEL 钩子注入记忆
+    .methodTools(kbTool, dataTool, webTool, timeTool)
+    .build();                        // CompileConfig: recursionLimit=10</code></pre>
+  <ul>
+    <li>基于 Spring AI Alibaba 的图执行引擎（<code>com.alibaba.cloud.ai.graph</code>），ReAct 循环 = 思考 → 调工具 → 观察结果 → 再思考，最多 10 轮。</li>
+    <li>门面 <code>AssistantAgentFacade</code> 提供同步 <code>chat()</code> 和流式 <code>streamChat()</code>（<code>Flux&lt;NodeOutput&gt;</code> 抽取文本 delta），失败有 <code>recoverFailedChat</code> 降级。</li>
+  </ul>
+
+  <h3>四个工具（Spring AI @Tool 自动注册）</h3>
+  <table>
+    <tr><th style="width:34%">工具</th><th>说明</th></tr>
+    <tr><td><code>AssistantKnowledgeBaseTool</code><br>.knowledgeBaseSearch</td><td><strong>★直接复用 <code>QaRetrievalService</code></strong>——第 5 章那套"逐组检索→跨组公平配额→证据分级"原样供给 Agent。这就是"检索能力建成组件而非接口"的回报。</td></tr>
+    <tr><td><code>StructuredDataQueryTool</code></td><td>查 Excel 结构化数据（表结构/行数据），工资条类问题的数据源</td></tr>
+    <tr><td><code>WebSearchTool</code></td><td>Bing 免 key 元搜索（知识库里没有的时效性问题）</td></tr>
+    <tr><td><code>CurrentTimeTool</code></td><td>当前时间（LLM 没有时间概念）</td></tr>
+  </table>
+
+  <h3>两级记忆（呼应第 1 章"为什么存在"三问）</h3>
+  <table>
+    <tr><th style="width:20%">层级</th><th>机制</th></tr>
+    <tr><td><b>短期记忆</b></td>
+      <td><code>AssistantShortTermMemoryHook</code>（<code>MessagesModelHook</code> + <code>@HookPositions(BEFORE_MODEL)</code>）——每次模型调用前<strong>无侵入地重建上下文</strong>：紧凑摘要 → 会话记忆 → 最近 10 条消息 → 当前问题；token 超 50000 触发运行时压缩（三级：summary_text → session_memory → compact_summary）。</td></tr>
+    <tr><td><b>长期记忆</b></td>
+      <td><code>MemoryExtractionListener</code> 异步抽取（只在用户明确说"记住/我喜欢…"时）→ 落 <code>user_memories</code> 表 → <code>MemoryRetriever</code> 打分检索（相关度 0.45 + 重要度 0.20 + 置信度 0.20 + 新鲜度 0.15，30 天衰减）→ <code>MemoryContextBuilder</code> 注入 Prompt。</td></tr>
+  </table>
+  <div class="wi"><b>What-If：</b>没有 BEFORE_MODEL Hook？——每个工具调用点、每条消息发送处都要手写"拼摘要+拼历史"的代码，拼装逻辑散落全链路（这正是《AI 时代学习开源项目》批判的"上帝类"问题）。Hook 把"给模型喂什么上下文"收敛到一个无侵入切面，主流程对此<strong>零感知</strong>。</div>
+  <div class="callout note"><div class="t">📌 一句话总结 V3 vs V4</div>V3 问答 = <strong>人编排</strong>的固定 RAG 流水线（可控、可审计，适合企业知识库主场景）；V4 助手 = <strong>模型自主</strong>的多工具编排（灵活，但行为不确定性更高）。生产系统两者并存：确定性要求高的走 V3，开放问题走 V4。</div>
+</section>
+
+<!-- ============ CH7 ============ -->
+<section id="ch7">
+  <h2><span class="cn">CH 07</span>动手实验 <span class="b b-lab">把 NoOp 的灯泡装上</span></h2>
+  <div class="callout note"><div class="t">💬 人话导读</div>本章是"练手区"，<strong>不读它完全不影响理解项目</strong>——人话线读者可以直接跳去第 8 章自测。四个实验按难度排序，每个都有明确的验证标准。最推荐<strong>实验一</strong>：项目里的重排器是个"留了插座没装灯泡"的空实现——你只需写一个新类注册成 Bean，灯泡就亮了，一行老代码都不用改。做完它，你对整条检索链路的理解会上一个台阶。<span class="enough">✅ 第一遍跳过本章；想动手时再回来。</span></div>
+  <h3>环境启动</h3>
+  <pre><code data-lang="bash"># 一键启动（Windows）：ES + MinIO + 本地 embedding + 后端 + 前端
+cd F:\ChatGPT\argus-loom
+.\scripts\start-all.ps1          # 前端就绪后访问 http://localhost:8081
+
+# 冒烟测试：登录 / 文档 / QA / Excel / 财务 全链路
+python scripts/full_smoke_test.py</code></pre>
+
+  <div class="steps">
+    <div class="step"><h5>实验一：给重排器接上真模型 ★<span class="b b-lab">难度 ★★★</span></h5>
+      <p><b>目标</b>：把 <code>RerankingService.NoOp</code> 换成真的 Cross-Encoder 重排。<br>
+      <b>步骤</b>：① 本地起一个 bge-reranker HTTP 服务（或接 Jina/Cohere API）；② 写 <code>BgeRerankingService implements RerankingService</code>，对 (query, chunkText) 逐对打分、按分数降序；③ 注册为 Bean——<code>RerankingConfiguration</code> 的 <code>@ConditionalOnMissingBean</code> 会自动让 NoOp 退位，<strong>一行现有代码都不用改</strong>；④ 用同一问题对比重排前后的 5 条上下文顺序。<br>
+      <b>验证</b>：构造一个"向量分高但词面不匹配"的查询，观察 NoOp 时排第一的候选被真重排器拉下马。<br>
+      <b>回滚</b>：注释掉 Bean，NoOp 自动回归。</p></div>
+
+    <div class="step"><h5>实验二：检索层加相似度阈值，观察拒答率<span class="b b-lab">难度 ★★</span></h5>
+      <p><b>目标</b>：理解"检索层截断 vs 证据层兜底"两种 philosophy 的差异。<br>
+      <b>步骤</b>：在 <code>PgVectorRetrievalAdapter.search</code> 的 <code>SearchRequest</code> 上加 <code>similarityThreshold(0.5)</code>；用 10 个"知识库里根本没有的问题" + 10 个正常问题做对照，统计拒答率变化。<br>
+      <b>思考</b>：阈值 0.5 时正常问题的召回是否被误杀？当前项目"阈值 0 + 证据层兜底"的设计在什么场景下反而不如检索层硬截断？（提示：ES 通道有分数，向量通道被截空时 BOTH 信号也没了）</p></div>
+
+    <div class="step"><h5>实验三：RRF k=0 vs k=60 对比<span class="b b-lab">难度 ★★</span></h5>
+      <p><b>目标</b>：亲手感受融合超参的影响。<br>
+      <b>步骤</b>：把 <code>RrfFusion.java:32</code> 的 k 改成 60；构造一个"某文档关键词强势霸榜第一、向量通道排第 3"的用例，对比 k=0 与 k=60 下的融合排序。观察 k=60 是否给向量通道的候选让出了位次。</p></div>
+
+    <div class="step"><h5>实验四：新增"命中测试" API<span class="b b-lab">难度 ★★</span></h5>
+      <p><b>目标</b>：复用检索编排，做一个调试利器（类似 Dify 的"召回测试"）。<br>
+      <b>步骤</b>：新增 <code>GET /api/qa/retrieval-preview?groupId&query</code>，内部直接调 <code>HybridChunkRetrievalService.retrieve</code>（<strong>不调 LLM、不落 qa_records</strong>），返回候选列表 + 双通道分数 + 融合分 + 证据等级。注意沿用 <code>DocumentRoleGate</code> 过滤——<strong>调试接口也不能绕过权限红线</strong>。</p></div>
+  </div>
+</section>
+
+<!-- ============ CH8 ============ -->
+<section id="ch8">
+  <h2><span class="cn">CH 08</span>分级自测：从 What 到 Design</h2>
+  <p>先自己作答（口头或写下来），再点开参考答案。答不上来的回到对应章节重读。</p>
+
+  <h3>Level 1 · What（是什么）</h3>
+  <details><summary>本项目一个 chunk 的默认大小、重叠、向量维度分别是多少？</summary><div class="ans"><p>目标 240 token（上限 320）、重叠 32 token（=64 汉字）、embedding 维度 512（bge-small-zh）。配置在 <code>application-local.yml</code> 的 <code>ingestion.chunking.*</code>。加分点：<code>estimateTokens</code> 按字符直算 token（<code>text.length()</code>），主体路径实际切出 240~320 字/块，而非 240×2=480 字；这个简化对中文反而更贴近 bge"一字一 token"的真实分词。</p></div></details>
+  <details><summary>项目里两个检索通道分别是什么？各自负责什么？</summary><div class="ans"><p>pgvector 向量通道（HNSW+cosine，语义泛化）+ Elasticsearch 关键词通道（IK 分词，精确词面/型号/专名）。各召回 50 条后 RRF 融合。</p></div></details>
+  <details><summary>证据等级有哪四级？拒答发生在哪个环节之前？</summary><div class="ans"><p>NONE / WEAK / PARTIAL / SUFFICIENT（<code>EvidenceAssessor</code>）。拒答发生在<strong>调用 LLM 之前</strong>——证据不足直接返回 INSUFFICIENT_EVIDENCE，零 token 消耗。</p></div></details>
+
+  <h3>Level 2 · How（怎么工作）</h3>
+  <details><summary>RRF 是怎么把向量分和 ES 分合成一个排序的？为什么说它"免调参"？</summary><div class="ans"><p>每路结果按名次贡献 <code>1/(k+rank)</code>，同名次同贡献，<strong>不看原始分值</strong>——所以无需把两种量纲不同的分数归一化或调权重。同 chunk 双路命中则累加并标 BOTH。</p></div></details>
+  <details><summary>结构感知切片的四级降级顺序是什么？每级解决什么问题？</summary><div class="ans"><p>Markdown 标题（跳过代码块内的 #）→ 空行段落 → 中英句子（。！？；!?;）→ 硬截断保底。从"语义天然完整"的边界逐级降级到"只保证不超限"，尽量让每块语义完整。</p></div></details>
+  <details><summary>SSE 流式路径上，token 流为什么要 .cache()？事件顺序是什么？</summary><div class="ans"><p><code>.cache()</code> 让 Flux 可被重复订阅而不重新执行——否则框架的第二次订阅会再调一次 LLM（重复扣费）。事件序：token* → citations → evidence-overview → record。</p></div></details>
+  <details><summary>短期记忆的 BEFORE_MODEL Hook 每次调用前注入了什么？超限后怎么办？</summary><div class="ans"><p>紧凑摘要 → 会话记忆 → 最近 10 条消息 → 当前问题；token 超 50000 触发运行时压缩（三级压缩 summary → session_memory → compact_summary）。</p></div></details>
+
+  <h3>Level 3 · Why（为什么存在）</h3>
+  <details><summary>为什么拒答要放在调 LLM 之前，而不是让模型自己说"我不知道"？</summary><div class="ans"><p>三个理由：① <strong>成本</strong>——不调用就零 token 消耗；② <strong>可靠性</strong>——模型"自知无知"不可靠，给空证据它照样可能编；代码级硬闸门是确定性约束；③ <strong>可观测</strong>——拒答结构化为 reasonCode，前端可定制话术、后端可统计拒答率。即使放行到模型，system prompt 也只是软约束。</p></div></details>
+  <details><summary>为什么 ETL 用 Spring Event + AFTER_COMMIT 而不是上传线程里直接跑、也不是发 MQ？</summary><div class="ans"><p>同步跑：用户等 30s 的 PDF 解析，HTTP 超时风险。普通异步（事务内触发）：监听器可能读不到未提交的文档行。AFTER_COMMIT 恰好卡在"数据已可见 + 用户已得到响应"的交点。不用 MQ：单体内部解耦 Event 足够，MQ 是跨服务才需要的复杂度（换 MQ 时发布/监听接口可保持不变）。</p></div></details>
+  <details><summary>为什么引用由 CitationAssembler 从 metadata 组装，而不让 LLM 在答案里写 [E1]？</summary><div class="ans"><p>LLM 写引用号会错编、漏标、串号（幻觉高发区），且无法保证可追溯。引用本质是<strong>检索结果的确定性投影</strong>（哪个 chunk 进了上下文就引哪个），代码组装 100% 准确、可审计，还能携带分数、区间等模型不知道的信息。</p></div></details>
+  <details><summary>为什么向量主键用 UUID(documentId:chunkIndex) 而不是随机 UUID？</summary><div class="ans"><p>幂等。ETL 重试时同一 (documentId, chunkIndex) 生成同一主键，写入天然去重（配合"先删后写"双保险）。随机 UUID 下每次重试都产生新向量，重复条目会污染检索结果（同内容占两个 topK、RRF 分数虚增）。</p></div></details>
+  <details><summary>为什么 pgvector 结果在 FilterExpression 之外还要做一次 Java 层 groupId 校验？</summary><div class="ans"><p>纵深防御。Filter 是"应然"，Java 校验是"实然"——万一 metadata 写坏、表达式构造 bug、或换底层实现导致过滤失效，第二道校验保证跨群组数据<strong>绝不</strong>流出到响应里。安全控制永远不依赖单点。</p></div></details>
+
+  <h3>Level 4 · Design（为什么这样而不是那样）</h3>
+  <details><summary>RRF 的 k 本项目取 0，论文常用 60。如果让你拍板，你选哪个？依据是什么？</summary><div class="ans"><p>参考思路：k 的作用是削弱头部通吃、给尾部机会。本项目单通道 topK=50、后续有重排（目前 NoOp）和证据评估，头部强相关不该被稀释，k=0 合理；但一旦接上真 Cross-Encoder 重排被移除/降级，或发现某类查询头部被单一通道霸占，k=60 值得实验。结论不重要，<strong>"用评估集说话"的决策过程</strong>才重要——这正是实验三的目的。</p></div></details>
+  <details><summary>如果知识库涨到 5000 万切片，架构里最先崩溃的是哪一环？怎么改？</summary><div class="ans"><p>参考思路：① pgvector HNSW 在单机内存/写入吞吐上先到瓶颈 → 向量库外置（Milvus/分布式 PG）；② 双通道串行/并行的 50+50 召回和 rerank 延迟放大 → 收紧 CHANNEL_TOP_K、上真重排提高 precision@5 以降低 context 需求；③ ES 单索引分片重排开销；④ ETL 单机线程池吞吐 → 引入 MQ 削峰。先量化（评估集+监控）再动刀。</p></div></details>
+  <details><summary>要求给 qa 模块加"多轮追问"（"那第二种情况呢？"），你会怎么设计？最小改动是什么？</summary><div class="ans"><p>参考思路：最小改动 = 复用 assistant 的短期记忆机制：请求带 sessionId，把上一轮 Q+A（或其摘要）作为查询规划的输入，让 QueryPlanningService 做<strong>指代消解</strong>（"第二种情况"→展开成完整问题），再走原有单轮链路。核心原则：<strong>改写发生在检索之前，历史不直接进生成 Prompt</strong>（避免污染证据约束）。</p></div></details>
+  <details><summary>让你把拒答率从 30% 降到 15% 而不引入幻觉，你的排查路径是什么？</summary><div class="ans"><p>参考思路：先量化——从 qa_records 统计拒答样本的 evidence_level 分布与 reasonCode；再分层：① 拒答发生在检索后 → 看是不是切块/检索问题（该命中的没命中：查切片质量、通道覆盖）；② 检索有结果但判级不足 → 调 BOTH/0.85 判据是否过严、接真重排提升 topScore；③ 问题本身超纲 → 不是 bug 是 feature（拒答正确）。顺序不能反：<strong>先分清"检索失败"和"知识缺失"，前者是工程问题，后者要补数据。</strong></p></div></details>
+
+  <h3>终极检验：面试官模式</h3>
+  <p>把第 1 章那段"架构导师" Prompt 交给任何 AI 助手，让它按 Level1→L4 逐题拷问你。连续答对两题它就会升难度——看看你能撑到第几题。</p>
+</section>
+
+<!-- ============ CH9 ============ -->
+<section id="ch9">
+  <h2><span class="cn">CH 09</span>企业级资源地图 <span class="b b-adv">持续进阶</span></h2>
+  <p>走出本项目，去看真正的企业级生产实践。以下资源按学习目的分五层，<strong>核心链接均已逐一抓取验证</strong>（标 ✅）。教程可以带你入门，但企业与 demo 的差距在<strong>解析质量、评估闭环与内容治理</strong>——靠这些资源补齐。</p>
+
+  <h3>9.1 官方文档与权威课程（地基，直接对应本项目技术栈）</h3>
+  <table>
+    <tr><th style="width:36%">资源</th><th>为什么重要</th></tr>
+    <tr><td>✅ <a href="https://docs.spring.io/spring-ai/reference/api/retrieval-augmented-generation.html" target="_blank">Spring AI 官方 RAG 文档</a></td>
+      <td><strong>本项目用的就是这套 API</strong>。Modular RAG 五阶段：Pre-Retrieval（RewriteQueryTransformer / MultiQueryExpander）→ Retrieval → Document Join → Post-Retrieval → Generation（空上下文拒答）。对照着读会发现 argus-loom 的 QueryPlanningService、EvidenceAssessor 正是这套体系的自研增强版</td></tr>
+    <tr><td>✅ <a href="https://java2ai.com" target="_blank">Spring AI Alibaba 官网</a></td>
+      <td>项目 Agent 部分（ReactAgent、图引擎）的官方文档站：Graph Core、多 Agent 编排、Admin 可视化</td></tr>
+    <tr><td>✅ <a href="https://github.com/langchain-ai/rag-from-scratch" target="_blank">LangChain rag-from-scratch</a>（9.4k★）</td>
+      <td>18 集视频系列，每集攻克一个 RAG 技术（routing / query rewriting / fusion / hybrid search）——<strong>最快建立完整概念地图</strong>的免费资源，与语言无关</td></tr>
+    <tr><td>✅ <a href="https://github.com/datawhalechina/all-in-rag" target="_blank">Datawhale《All-in-RAG》</a>（11.4k★）</td>
+      <td>中文最系统的 RAG 全栈开源教程：数据分块 → 索引 → 混合检索 → 评估 → GraphRAG → 实战项目，<a href="https://datawhalechina.github.io/all-in-rag/" target="_blank">在线阅读</a></td></tr>
+    <tr><td><a href="https://learn.deeplearning.ai" target="_blank">DeepLearning.AI 短课程</a></td>
+      <td>《Building and Evaluating Advanced RAG Applications》（LlamaIndex 创始人 Jerry Liu 主讲：sentence-window / auto-merging 检索）+《Building Agentic RAG with LlamaIndex》，免费约 1 小时一门</td></tr>
+  </table>
+
+  <h3>9.2 大厂工程实践与参考架构（"企业级"到底指什么）</h3>
+  <ul>
+    <li>✅ <a href="https://www.anthropic.com/news/contextual-retrieval" target="_blank">Anthropic《Introducing Contextual Retrieval》</a>——被引用最多的生产级工程实证：给每个切片前置 LLM 生成的上下文摘要，检索失败率 5.7%→2.9%（<strong>-49%</strong>），组合 reranking 后 1.9%（<strong>-67%</strong>）。这正是 <code>StructureAwareChunkTransformer</code> 的下一个进化方向</li>
+    <li><a href="https://docs.aws.amazon.com/bedrock/latest/userguide/knowledge-base.html" target="_blank">AWS Bedrock Knowledge Bases</a>——托管版企业 RAG 的访问控制与加密实践，对照本项目的 <code>DocumentRoleGate</code></li>
+    <li><a href="https://learn.microsoft.com/en-us/azure/search/retrieval-augmented-generation-overview" target="_blank">Azure AI Search RAG 官方指南</a>——微软对 RAG 索引层的权威定义（向量 + 文本混合检索）</li>
+    <li><a href="https://cloud.google.com/vertex-ai/generative-ai/docs/rag-engine/rag-engine-overview" target="_blank">Google Vertex AI RAG Engine</a>——Google 托管 RAG 参考架构</li>
+  </ul>
+
+  <h3>9.3 开源生产级项目（第二课堂：读真实工程的代码）</h3>
+  <table>
+    <tr><th style="width:34%">项目</th><th>对你的价值</th></tr>
+    <tr><td>✅ <a href="https://github.com/infiniflow/ragflow" target="_blank">RAGFlow</a>（91.3k★）</td>
+      <td><strong>最值得精读的一家</strong>：DeepDoc 深度文档解析（扫描件/表格/版式识别）是对抗幻觉的核心壁垒；模板化可解释分块、答案逐句溯源。技术栈与本项目同款（ES 存全文 + 向量）</td></tr>
+    <tr><td><a href="https://github.com/langgenius/dify" target="_blank">Dify</a></td>
+      <td>工作流编排 + 应用层封装，常与 RAGFlow 组成"编排 + 检索"联合架构</td></tr>
+    <tr><td><a href="https://github.com/labring/FastGPT" target="_blank">FastGPT</a> · <a href="https://github.com/1Panel-dev/MaxKB" target="_blank">MaxKB</a> · <a href="https://github.com/netease-youdao/QAnything" target="_blank">QAnything</a></td>
+      <td>三种定位：可视化编排 / 开箱即用客服问答 / 轻量本地两阶段检索——横向对比后建立选型坐标系</td></tr>
+    <tr><td><a href="https://github.com/disler/ai-engineering-hub" target="_blank">ai-engineering-hub</a>（13.1k★）</td>
+      <td>RAG + Agent 应用教程合集，适合当"菜谱库"随时翻</td></tr>
+  </table>
+
+  <h3>9.4 评估体系（生产级与 demo 的分界线）</h3>
+  <ul>
+    <li>✅ <a href="https://docs.ragas.io" target="_blank">RAGAS 官方文档</a>——RAG 评估事实标准，四大指标：<strong>Faithfulness</strong>（答案是否忠实于检索上下文）/ Answer Relevancy / Context Precision / Context Recall。本项目 <code>qa_records</code> 已埋好数据基础，<strong>就差这一层</strong></li>
+    <li><a href="https://www.trulens.org" target="_blank">TruLens</a> · <a href="https://github.com/confident-ai/deepeval" target="_blank">DeepEval</a>——补充的评估与可观测工具</li>
+    <li><a href="https://www.pinecone.io/learn/hybrid-search" target="_blank">Pinecone Learn</a> · <a href="https://weaviate.io/developers/weaviate/concepts/search/hybrid-search" target="_blank">Weaviate 混合检索文档</a>——向量库厂商把 hybrid search 讲得最清楚的两处</li>
+  </ul>
+
+  <h3>9.5 前沿论文（进阶天花板）</h3>
+  <table>
+    <tr><th style="width:30%">论文</th><th>一句话</th></tr>
+    <tr><td><a href="https://arxiv.org/abs/2407.21059" target="_blank">Modular RAG</a></td><td>Spring AI 官方 RAG 文档明确引用的理论出处</td></tr>
+    <tr><td><a href="https://arxiv.org/abs/2312.10997" target="_blank">RAG 综述</a></td><td>Naive / Advanced / Modular 三代分类的原始出处（第 2 章演进表的依据）</td></tr>
+    <tr><td><a href="https://arxiv.org/abs/2401.15884" target="_blank">CRAG</a></td><td>检索结果评估 + 纠错循环——本项目 <code>EvidenceAssessor</code> 的学术版</td></tr>
+    <tr><td><a href="https://arxiv.org/abs/2310.11511" target="_blank">Self-RAG</a></td><td>自反思决定是否检索、并批判自己生成的答案</td></tr>
+    <tr><td><a href="https://microsoft.github.io/graphrag/" target="_blank">GraphRAG</a></td><td>知识图谱 + 社区摘要，解决 top-k 检索结构性无法回答的"全局性问题"</td></tr>
+    <tr><td><a href="https://arxiv.org/abs/2401.18059" target="_blank">RAPTOR</a></td><td>递归摘要树，兼顾细节检索与全局抽象</td></tr>
+    <tr><td><a href="https://arxiv.org/abs/2212.10496" target="_blank">HyDE</a></td><td>先生成假设答案再去检索，查询扩展的经典思路</td></tr>
+  </table>
+
+  <h3>9.6 结合本项目的 4 步进阶路径</h3>
+  <div class="steps">
+    <div class="step"><h5>补概念地图（2h）</h5>
+      <p>rag-from-scratch 视频过一遍 → 再读 Spring AI 官方 Modular RAG 文档，<strong>对照本项目代码</strong>：RewriteQueryTransformer ↔ QueryPlanningService、DocumentPostProcessor ↔ RerankingService、空上下文拒答 ↔ EvidenceAssessor。</p></div>
+    <div class="step"><h5>补最大短板：评估（3h）</h5>
+      <p><code>qa_records</code> / <code>qa_record_citations</code> 已经把数据埋点做完，接上 RAGAS 就是完整闭环——<strong>这是"生产级 vs demo"的分界线，优先级高于一切新功能</strong>。</p></div>
+    <div class="step"><h5>攻文档解析（2h）</h5>
+      <p>读 RAGFlow DeepDoc 的设计。本项目只支持 txt/md/pdf/docx 纯文本解析，而扫描件和复杂表格是真实企业知识库的主要构成——这是与"真正的企业级"之间最大的工程差距。</p></div>
+    <div class="step"><h5>切片优化（1h）</h5>
+      <p>带着 Contextual Retrieval 的 -49% / -67% 数据回看 <code>StructureAwareChunkTransformer</code>——"给切片注入上下文摘要"是当前性价比最高的检索优化，可作为第 7 章实验一的姊妹篇。</p></div>
+  </div>
+
+  <div class="callout note"><div class="t">📌 三层认知：企业级 RAG 难在哪</div>
+  <p><strong>① 检索公式层</strong>（demo 级）：混合检索 / RRF / 重排 / 拒答——本项目已全有，查询规划甚至超出多数开源项目。<br>
+  <strong>② 工程层</strong>（生产级）：文档解析质量（<strong>最大差距</strong>）、权限多租户（已 fail-closed ✅）、成本控制（拒答前置 ✅）、评估与持续运营（缺失，最优先补）。<br>
+  <strong>③ 治理层</strong>（企业级）：行业经验显示 40–60% 的企业 RAG 项目到不了生产，卡点通常不在算法，而在内容治理、权限与评估闭环——这也是为什么评估排在学习路径第 2 步。</p></div>
+</section>
+
+<!-- ============ APPENDIX ============ -->
+<section id="appx">
+  <h2><span class="cn">附录</span>速查表</h2>
+  <h3>A1 · 核心 API</h3>
+  <table>
+    <tr><th style="width:42%">接口</th><th>说明</th></tr>
+    <tr><td><code>POST /api/qa/ask</code></td><td>同步问答（@RateLimit 20/min）</td></tr>
+    <tr><td><code>POST /api/qa/stream-ask</code></td><td>SSE 流式问答（token*→citations→record）</td></tr>
+    <tr><td><code>GET /api/qa/records[/{id}]</code> · <code>PUT .../rate</code> · <code>DELETE</code></td><td>问答历史：分页/详情/评分/删除</td></tr>
+    <tr><td><code>POST /api/documents/upload[/init|/chunks|/{id}/complete]</code></td><td>直传（≤10MB）/ 分片三段式（≤256MB，SHA-256 秒传）</td></tr>
+    <tr><td><code>POST /api/documents/{id}/retry-ingestion</code></td><td>ETL 失败重试</td></tr>
+    <tr><td><code>PUT /api/documents/{id}/role</code></td><td>设置文档角色门槛（USER/FINANCE/ADMIN）</td></tr>
+    <tr><td><code>POST /api/assistant/chat[/stream]</code> · <code>/api/assistant/sessions</code></td><td>AI 助手对话（同步/SSE）与会话管理</td></tr>
+    <tr><td><code>/api/groups</code> · <code>/api/auth/*</code></td><td>群组（知识库隔离）/ 认证（login/refresh/logout/me）</td></tr>
+  </table>
+  <h3>A2 · 关键配置（application-local.yml）</h3>
+  <pre><code data-lang="yaml">spring.ai.model: { chat: openai, embedding: local }        # OpenAI 兼容 + 本地 bge
+spring.ai.openai: { base-url: 'http://127.0.0.1:11435', chat.model: agnes-3.0-flash }
+spring.ai.vectorstore.pgvector: { dimensions: 512, index-type: hnsw, distance-type: cosine_distance }
+ingestion.chunking: { target-tokens: 240, max-tokens: 320, overlap-tokens: 32, chars-per-token: 2 }
+ingestion.vector.add-batch-size: 9
+argus.rag.llm: { timeout-seconds: 45, max-retries: 3 }      # 退避 1s×2^n，上限 8s
+kb-routing: { enabled: true, max-groups: 3, per-group-top-k: 3, overall-top-k: 12 }
+youcom.search.enabled: false                                # 付费网络搜索，默认关</code></pre>
+  <h3>A3 · 术语表</h3>
+  <table>
+    <tr><th style="width:24%">术语</th><th>一句话解释</th></tr>
+    <tr><td>Chunk / 切片</td><td>文档被切成的检索单元（本项目 240 token，带重叠）</td></tr>
+    <tr><td>Embedding</td><td>把文本映射成语义向量（512 维），语义越近向量越近</td></tr>
+    <tr><td>HNSW</td><td>近似最近邻索引算法，用图结构换秒级→毫秒级检索</td></tr>
+    <tr><td>RRF</td><td>Reciprocal Rank Fusion，按名次倒数融合多路排序，免调参</td></tr>
+    <tr><td>Rerank / Cross-Encoder</td><td>对 (query, chunk) 逐对精算相关性的重排模型，精度最高、最慢</td></tr>
+    <tr><td>fail-closed</td><td>安全策略：拿不到明确"允许"就一律拒绝（宁误杀不放过）</td></tr>
+    <tr><td>Advisor（Spring AI）</td><td>请求/响应拦截器链，RAG 上下文注入的标准位置</td></tr>
+    <tr><td>Hook（Agent）</td><td>Agent 图执行生命周期切面，BEFORE_MODEL = 每次调模型前</td></tr>
+    <tr><td>SSE</td><td>Server-Sent Events，HTTP 单向服务端推送，本项目的流式方案</td></tr>
+    <tr><td>拒答（Refusal）</td><td>证据不足时拒绝回答，防幻觉+省成本的硬闸门</td></tr>
+  </table>
+  <h3>A4 · 参考资料</h3>
+  <ul>
+    <li><a href="https://www.codefather.cn/post/2103044523826475009" target="_blank">AI 时代学习开源项目的正确姿势</a> —— 本教程方法论来源</li>
+    <li><a href="https://www.codefather.cn/post/2056275623579504642" target="_blank">我完成了一个最新的 RAG 项目</a> —— 本项目的开发复盘（V1→V4 叙事来源）</li>
+    <li>Atlan · 12 Advanced RAG Techniques Beyond Naive Retrieval（混合检索/重排/GraphRAG 基准对比）</li>
+    <li>Neo4j · Advanced RAG techniques for high-performance LLM apps（生产就绪路线图）</li>
+    <li>Dify · Introducing Hybrid Search and Rerank（混合检索+重排实战）</li>
+    <li>Prompt Engineering Guide · RAG（索引/检索/生成三段式基础）</li>
+    <li>项目内文档：<code>backend/docs/核心链路-陪读-RAG与AI助手.md</code>（逐行陪读）· <code>docs/MEMORY-知识库问答.md</code>（记忆速查）· <code>docs/architecture/</code>（drawio 架构图）</li>
+  </ul>
+</section>
+
+<!-- ============ APPENDIX B ============ -->
+<section id="mem">
+  <h2><span class="cn">附录 B</span>项目记忆速查 <span class="b b-core">面试前 10 分钟</span></h2>
+  <p>把整份教程压缩成一页复习卡——面试/答辩前快速过一遍，所有数字与结论都能在源码里指认。本页即 <code>docs/MEMORY-知识库问答.md</code> 的浓缩版。</p>
+
+  <h3>B1 · 技术栈一句话</h3>
+  <table>
+    <tr><th style="width:26%">项</th><th>值</th></tr>
+    <tr><td>框架</td><td>Java 21 · Spring Boot 3.5 · <strong>Spring AI / Spring AI Alibaba 1.1.2</strong>（无 LangChain 编排层）</td></tr>
+    <tr><td>Embedding</td><td>本地 bge-small-zh（JVM 内 ONNX），<strong>512 维</strong>，离线免 key</td></tr>
+    <tr><td>Chat</td><td>agnes-3.0-flash，OpenAI 兼容协议（换模型只改 base-url + model 两个配置）</td></tr>
+    <tr><td>向量库</td><td>PostgreSQL + pgvector：HNSW（m=16, ef=200）、cosine 距离</td></tr>
+    <tr><td>关键词</td><td>Elasticsearch 8 · IK 中文分词 · bool 初排 + rescore 精排</td></tr>
+    <tr><td>存储/异步</td><td>MinIO 对象存储；Spring Event + @Async（无 MQ）；<strong>无真实 Redis</strong>（RedisChunkCacheService 是进程内 LRU+TTL）</td></tr>
+  </table>
+
+  <h3>B2 · 两条链路速记</h3>
+  <pre><code data-lang="text">ETL：Controller 上传(直传≤10M / 分片≤256M·SHA-256秒传) → MinIO
+  → ParserFactory(txt/md/pdf/docx) → 清洗
+  → 结构感知切片(标题→段落→句子→硬截断, 240tok/重叠32)
+  → document_chunks → pgvector(删旧写新·稳定ID) + ES 索引 → READY
+触发：@TransactionalEventListener(AFTER_COMMIT) + @Async + @Retryable(2s/4s/8s) + @Recover
+
+问答：/api/qa/ask | /stream-ask(SSE) → 群组权限 + 限流(20次/分)
+  → RoleGate 角色门槛(fail-closed 红线)
+  → LLM 查询规划(DIRECT/REWRITE/DECOMPOSE/GLOBAL)
+  → 双通道(向量 top50 + ES top50) → RRF 融合(k=0, 标记 BOTH)
+  → Rerank(当前 NoOp) → 聚类 + 邻居窗口(前后各 1 片)
+  → 证据四级(NONE/WEAK/PARTIAL/SUFFICIENT)
+  → 不足直接拒答(不调 LLM, 零 token) → Prompt(强制 JSON) → LLM(45s 超时)
+  → 引用组装(代码组装, 非模型生成) → qa_records + citations 落库</code></pre>
+
+  <h3>B3 · 关键数字</h3>
+  <div class="kv">
+    <div><b>240/32</b><span>目标 token / 重叠（上限 320）</span></div>
+    <div><b>50+50→5</b><span>双通道召回 → 进上下文</span></div>
+    <div><b>k=0</b><span>RRF 融合（业界常用 60）</span></div>
+    <div><b>0.85</b><span>topScore 判 SUFFICIENT</span></div>
+    <div><b>45s</b><span>LLM 超时（重试 3 次）</span></div>
+    <div><b>3 群</b><span>跨库路由上限（每组 3 / 总 12）</span></div>
+  </div>
+
+  <h3>B4 · 红线与易错点</h3>
+  <ul>
+    <li><strong>红线</strong>：<code>DocumentRoleGate</code> fail-closed 判定不得改动；响应一律 <code>ApiResponse</code> 包装；异步复用统一线程池；SSE 代理保持去缓冲。</li>
+    <li><strong>没有真实 Redis</strong>：名字带 Redis 的类是进程内 LRU+TTL 缓存，pom.xml 无 redis 依赖。</li>
+    <li><strong>重排是"空转"的</strong>：接口/调用点在，唯一实现 NoOp——接真模型只需注册 Bean（第 7 章实验一）。</li>
+    <li><strong>拒答在 LLM 之前</strong>：证据不足直接返回 INSUFFICIENT_EVIDENCE，零 token 消耗。</li>
+    <li><strong>引用是代码组装的</strong>：答案正文无引用角标，CitationAssembler 从证据 metadata 确定性生成，100% 可溯源。</li>
+    <li><strong>qa 无会话态</strong>：每次提问独立；多轮对话与记忆在 assistant 模块。</li>
+    <li><strong>ETL 等事务提交</strong>：AFTER_COMMIT 防止监听器读不到未提交的文档行。</li>
+    <li><strong>向量主键幂等</strong>：UUID(documentId:chunkIndex) 派生，重试不产生重复向量。</li>
+  </ul>
+
+  <div class="callout tip"><div class="t">✅ 使用方式</div>整份教程（含本速查页）为<strong>单文件自包含 HTML</strong>——把这一个文件发到手机（微信文件传输助手 / 网盘 / 数据线均可），用任意浏览器打开即可离线阅读，无需联网、无需安装 App。</div>
+</section>
+
+</div><!-- /wrap -->
+</main>
+
+<footer>
+  <div class="wrap">Argus-Loom 知识库问答源码学习教程 · 生成于 2026-09-25 · 基于代码快照 edf9753（行号可能随重构漂移，以类名+方法名为准）· 单文件自包含，支持手机端阅读</div>
+</footer>
+
+<script>
+(function(){
+  // 阅读进度条
+  var bar = document.getElementById('progress');
+  function onScroll(){
+    var h = document.documentElement;
+    var p = h.scrollTop / (h.scrollHeight - h.clientHeight);
+    bar.style.width = (p*100).toFixed(2) + '%';
+  }
+  document.addEventListener('scroll', onScroll, {passive:true}); onScroll();
+
+  // 侧边导航高亮
+  var links = Array.prototype.slice.call(document.querySelectorAll('.nav a'));
+  var secs = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  function pick(){
+    var y = window.scrollY + 120, idx = 0;
+    secs.forEach(function(s,i){ if(s && s.offsetTop <= y) idx = i; });
+    links.forEach(function(a,i){ a.classList.toggle('on', i === idx); });
+  }
+  document.addEventListener('scroll', pick, {passive:true}); pick();
+
+  // 移动端目录抽屉
+  var side = document.querySelector('.sidebar'),
+      mask = document.getElementById('mask'),
+      burger = document.getElementById('burger');
+  function drawer(open){
+    if(!side) return;
+    side.classList.toggle('open', open);
+    mask.classList.toggle('show', open);
+  }
+  if (burger) burger.addEventListener('click', function(){ drawer(!side.classList.contains('open')); });
+  if (mask) mask.addEventListener('click', function(){ drawer(false); });
+  links.forEach(function(a){ a.addEventListener('click', function(){ drawer(false); }); });
+
+  // 轻量语法高亮（无外部依赖）
+  var KW = ['public','private','protected','class','interface','record','enum','new','return','if','else','for','while','do','switch','case','break','continue','try','catch','finally','throw','throws','extends','implements','static','final','void','int','long','double','boolean','var','this','super','import','package','null','true','false','const','let','function','def'];
+  function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function hl(src, lang){
+    var out = esc(src), store = [];
+    function keep(cls, m){ store.push('<span class="'+cls+'">'+m+'</span>'); return '\u0001'+(store.length-1)+'\u0001'; }
+    if (lang === 'yaml' || lang === 'bash' || lang === 'text') {
+      out = out.replace(/#[^\n]*/g, function(m){ return keep('tk-c', m); });
+    } else {
+      out = out.replace(/\/\*[\s\S]*?\*\//g, function(m){ return keep('tk-c', m); })
+               .replace(/\/\/[^\n]*/g, function(m){ return keep('tk-c', m); });
+    }
+    out = out.replace(/&quot;|"([^"\\\n]|\\.)*"|'([^'\\\n]|\\.)*'/g, function(m){ return keep('tk-s', m); });
+    if (lang === 'java') {
+      out = out.replace(/@\w+/g, function(m){ return keep('tk-a', m); });
+      out = out.replace(new RegExp('\\b('+KW.join('|')+')\\b','g'), function(m){ return keep('tk-k', m); });
+    }
+    if (lang === 'yaml') {
+      out = out.replace(/^(\s*)([\w.\-]+)(?=\s*:)/gm, function(m,a,k){ return a + keep('tk-key', k); });
+      out = out.replace(/\b(true|false|null|\d+(?:\.\d+)?)\b/g, function(m){ return keep('tk-n', m); });
+    }
+    if (lang === 'json') {
+      out = out.replace(/&quot;|"(?:[^"\\\n]|\\.)*"(?=\s*:)/g, function(m){ return keep('tk-key', m); });
+      out = out.replace(/\b(true|false|null|-?\d+(?:\.\d+)?)\b/g, function(m){ return keep('tk-n', m); });
+    }
+    out = out.replace(/\u0001(\d+)\u0001/g, function(m,i){ return store[+i]; });
+    return out;
+  }
+  document.querySelectorAll('pre code[data-lang]').forEach(function(el){
+    el.innerHTML = hl(el.textContent, el.getAttribute('data-lang'));
+  });
+})();
+</script>
+</body>
+</html>

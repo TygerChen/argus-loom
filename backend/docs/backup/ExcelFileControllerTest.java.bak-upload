@@ -1,0 +1,117 @@
+package com.argus.rag.excel.controller;
+
+import com.argus.rag.auth.CurrentUserService;
+import com.argus.rag.common.enums.SystemRole;
+import com.argus.rag.excel.entity.ExcelDocument;
+import com.argus.rag.excel.entity.ExcelSheet;
+import com.argus.rag.excel.service.ExcelDocumentService;
+import com.argus.rag.excel.service.ExcelParserService;
+import com.argus.rag.excel.service.ExcelSheetService;
+import com.argus.rag.excel.service.StreamingParserService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.SpringBootConfiguration;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration;
+import org.springframework.boot.autoconfigure.security.servlet.SecurityFilterAutoConfiguration;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+
+import java.io.InputStream;
+import java.util.List;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+/**
+ * 验证 Excel 上传必须先创建主文档记录，拿到 documentId 后再解析 Sheet/Chunk。
+ */
+@WebMvcTest(
+        controllers = ExcelFileController.class,
+        excludeAutoConfiguration = {
+                SecurityAutoConfiguration.class,
+                SecurityFilterAutoConfiguration.class
+        }
+)
+@Import(ExcelFileController.class)
+@DisplayName("Excel 文件上传控制器测试")
+class ExcelFileControllerTest {
+
+    @SpringBootConfiguration
+    @EnableAutoConfiguration
+    static class TestApplication {
+    }
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockitoBean
+    private ExcelParserService parserService;
+
+    @MockitoBean
+    private ExcelDocumentService documentService;
+
+    @MockitoBean
+    private ExcelSheetService sheetService;
+
+    @MockitoBean
+    private StreamingParserService streamingParserService;
+
+    @MockitoBean
+    private CurrentUserService currentUserService;
+
+    @BeforeEach
+    void setUp() throws Exception {
+        when(currentUserService.getRequiredCurrentUser()).thenReturn(
+                new CurrentUserService.CurrentUser(1L, "T100001", "冒烟用户", SystemRole.USER, false));
+        when(documentService.create(any(ExcelDocument.class))).thenAnswer(invocation -> {
+            ExcelDocument document = invocation.getArgument(0);
+            document.setId(88L);
+            return document;
+        });
+
+        ExcelSheet sheet = new ExcelSheet();
+        sheet.setId(655L);
+        sheet.setSheetName("Sheet1");
+        sheet.setTotalRows(3);
+        sheet.setTotalCols(3);
+        sheet.setChunkCount(1);
+        sheet.setActive(1);
+        when(parserService.parseAndSave(any(InputStream.class), any(ExcelDocument.class)))
+                .thenReturn(List.of(sheet));
+    }
+
+    @Test
+    @DisplayName("上传时先创建文档主记录，再解析并保存 Sheet")
+    void shouldPersistDocumentBeforeParsing() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "finance.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                new byte[]{(byte) 0x50, 0x4b, 0x03, 0x04}
+        );
+
+        mockMvc.perform(multipart("/api/excel/upload").file(file))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.documentId").value(88))
+                .andExpect(jsonPath("$.data.sheetCount").value(1));
+
+        InOrder inOrder = inOrder(documentService, parserService);
+        inOrder.verify(documentService).create(any(ExcelDocument.class));
+        inOrder.verify(parserService).parseAndSave(any(InputStream.class), any(ExcelDocument.class));
+        inOrder.verify(documentService).updateSheetMeta(eq(88L), eq(1), anyString());
+    }
+}

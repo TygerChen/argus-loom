@@ -1,0 +1,115 @@
+package com.argus.rag.excel.controller;
+
+import com.alibaba.fastjson.JSONArray;
+import com.argus.rag.auth.CurrentUserService;
+import com.argus.rag.common.api.ApiResponse;
+import com.argus.rag.common.exception.BusinessException;
+import com.argus.rag.common.exception.ForbiddenException;
+import com.argus.rag.common.exception.UnauthorizedException;
+import com.argus.rag.excel.entity.ExcelDocument;
+import com.argus.rag.excel.entity.ExcelSheet;
+import com.argus.rag.excel.model.vo.SheetMetaVO;
+import com.argus.rag.excel.model.vo.UploadResultVO;
+import com.argus.rag.excel.service.ExcelDocumentService;
+import com.argus.rag.excel.service.ExcelParserService;
+import com.argus.rag.excel.service.StreamingParserService;
+import com.argus.rag.excel.service.ExcelSheetService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/excel")
+@Tag(name = "Excel 文件上传", description = "上传 Excel 文件，自动解析并分块入库")
+public class ExcelFileController {
+
+    private static final Logger log = LoggerFactory.getLogger(ExcelFileController.class);
+    private static final long LARGE_FILE_THRESHOLD = 50L * 1024 * 1024; // 50MB
+
+    private final ExcelParserService parserService;
+    private final ExcelDocumentService documentService;
+    private final ExcelSheetService sheetService;
+    private final CurrentUserService currentUserService;
+    private final StreamingParserService streamingParserService;
+
+    @Value("${argus.rag.excel.upload-path:./upload}")
+    private String uploadPath;
+
+    public ExcelFileController(ExcelParserService parserService,
+                               ExcelDocumentService documentService,
+                               ExcelSheetService sheetService,
+                               CurrentUserService currentUserService,
+                               StreamingParserService streamingParserService) {
+        this.parserService = parserService;
+        this.documentService = documentService;
+        this.sheetService = sheetService;
+        this.currentUserService = currentUserService;
+        this.streamingParserService = streamingParserService;
+    }
+
+    @Operation(summary = "上传 Excel 文件", description = "支持 .xlsx/.xls，POI 流式解析后分块写入数据库，大于 50MB 自动切换 SAX 流式解析防 OOM")
+    @PostMapping("/upload")
+    public ApiResponse<UploadResultVO> upload(@RequestParam("file") MultipartFile file) {
+        ExcelDocument doc = null;
+        try {
+            String originalName = file.getOriginalFilename();
+            String savedName = UUID.randomUUID() + "_" + originalName;
+            Path dir = Paths.get(uploadPath).toAbsolutePath().normalize();
+            if (!Files.exists(dir)) Files.createDirectories(dir);
+            Path filePath = dir.resolve(savedName);
+            file.transferTo(filePath.toFile());
+
+            doc = new ExcelDocument();
+            doc.setName(originalName);
+            doc.setFilePath(filePath.toString());
+            doc.setFileSize(file.getSize());
+            doc.setCreatorId(String.valueOf(currentUserService.getRequiredCurrentUser().userId()));
+
+            // > 50MB 走流式解析避免 OOM
+            boolean isLargeFile = file.getSize() > LARGE_FILE_THRESHOLD;
+            log.info("上传文件: name={}, size={}, streaming={}", originalName, file.getSize(), isLargeFile);
+
+            // 先建主记录拿到 documentId，Sheet/Chunk 才能正确关联；
+            // 解析失败时解析事务回滚，主记录由 catch 兜底清理。
+            documentService.create(doc);
+            List<ExcelSheet> sheets;
+            try (InputStream is = new FileInputStream(filePath.toFile())) {
+                sheets = parserService.parseAndSave(is, doc);
+            }
+
+            List<String> sheetNames = new ArrayList<>();
+            for (ExcelSheet s : sheets) sheetNames.add(s.getSheetName());
+            documentService.updateSheetMeta(doc.getId(), sheets.size(), JSONArray.toJSONString(sheetNames));
+
+            List<SheetMetaVO> sheetMetaList = sheets.stream()
+                    .map(s -> new SheetMetaVO(s.getId(), s.getSheetIndex(), s.getSheetName(),
+                            s.getTotalRows(), s.getTotalCols(), s.getChunkCount(), s.getActive()))
+                    .toList();
+
+            return ApiResponse.success(new UploadResultVO(doc.getId(), doc.getName(), sheets.size(), sheetMetaList));
+        } catch (UnauthorizedException | ForbiddenException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("上传失败", e);
+            if (doc != null && doc.getId() != null) {
+                try { documentService.purge(doc.getId()); } catch (Exception cleanupEx) { log.warn("上传失败后清理文档失败 docId={}", doc.getId(), cleanupEx); }
+            } else if (doc != null && doc.getFilePath() != null) {
+                try { Files.deleteIfExists(Paths.get(doc.getFilePath())); } catch (Exception cleanupEx) { log.warn("上传失败后删除临时文件失败 path={}", doc.getFilePath(), cleanupEx); }
+            }
+            throw new BusinessException("上传失败: " + (e.getMessage() != null ? e.getMessage() : "文件解析错误"));
+        }
+    }
+}

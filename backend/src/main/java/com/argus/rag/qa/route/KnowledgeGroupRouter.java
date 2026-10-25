@@ -1,0 +1,250 @@
+package com.argus.rag.qa.route;
+
+import com.argus.rag.document.mapper.DocumentMapper;
+import com.argus.rag.document.model.entity.DocumentEntity;
+import com.argus.rag.group.service.GroupMembershipService;
+import com.argus.rag.group.service.GroupMembershipService.VisibleGroup;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
+
+/**
+ * 知识库轻量自动路由。
+ * <p>不调用 LLM，基于用户问题与知识库名称/描述/文档文件名的词汇匹配分，
+ * 从用户可见知识库中选出最相关的一个或多个。后续可平滑替换为向量中心路由。</p>
+ *
+ * <p><b>为什么需要路由</b>：系统支持多个知识库（群组），用户提问时如果对
+ * 所有库都做向量检索，既慢又会引入不相关库的噪音。路由器先回答
+ * "这个问题最可能出自哪几个库"，把检索范围收窄到 top-k（默认 3）。</p>
+ *
+ * <p><b>为什么不用大模型来路由</b>：路由发生在每次问答的最前面，
+ * 用 LLM 意味着每个问题多一次模型调用的延迟和费用。这里用
+ * "词面匹配打分"（问题分词 ↔ 库名/描述/文档名重合度）零成本完成粗筛；
+ * 类注释里说的"向量中心路由"是演进方向——把库名和问题都转向量比相似度，
+ * 能处理同义词，但第一版词面匹配已够用。<b>先用便宜的方案满足需求，
+ * 留好接口等真的不够再升级</b>——这是范围收窄类功能的标准演进路径。</p>
+ *
+ * <p><b>权限边界</b>：候选集来自 listVisibleGroupsForUser——
+ * 路由永远不会把用户无权访问的库选进来，检索层面的权限过滤
+ * （04 篇的 RoleGate）是第二道，这里是第一道。</p>
+ */
+@Component
+public class KnowledgeGroupRouter {
+
+    private static final Pattern NON_WORD = Pattern.compile("[^\\p{L}\\p{N}]+");
+    private static final int CJK_BIGRAM_SIZE = 2;
+
+    private final GroupMembershipService groupMembershipService;
+    private final DocumentMapper documentMapper;
+    private final boolean enabled;
+    private final int maxGroups;
+    private final int docSampleLimit;
+
+    public KnowledgeGroupRouter(
+            GroupMembershipService groupMembershipService,
+            DocumentMapper documentMapper,
+            @Value("${kb-routing.enabled:true}") boolean enabled,
+            @Value("${kb-routing.max-groups:3}") int maxGroups,
+            @Value("${kb-routing.doc-sample-limit:100}") int docSampleLimit
+    ) {
+        this.groupMembershipService = groupMembershipService;
+        this.documentMapper = documentMapper;
+        this.enabled = enabled;
+        this.maxGroups = Math.max(1, maxGroups);
+        this.docSampleLimit = Math.max(1, docSampleLimit);
+    }
+
+    /**
+     * 从候选（或全部可见）知识库中选出最相关的若干个。
+     *
+     * @param userId           当前用户 ID
+     * @param query           用户问题
+     * @param candidateGroupIds 显式指定的候选范围；为空时使用全部可见知识库
+     * @return 按相关性降序的路由结果
+     */
+    public List<RoutedKnowledgeGroup> route(Long userId, String query, List<Long> candidateGroupIds) {
+        if (!enabled) {
+            return List.of();
+        }
+        List<VisibleGroup> visibleGroups = groupMembershipService.listVisibleGroupsForUser(userId);
+        List<VisibleGroup> candidates = filterCandidates(visibleGroups, candidateGroupIds);
+        if (candidates.isEmpty()) {
+            return List.of();
+        }
+        String normalizedQuery = query == null ? "" : query.trim();
+        Set<String> queryTokens = tokenize(normalizedQuery);
+        List<ScoredGroup> scored = new ArrayList<>();
+        for (VisibleGroup group : candidates) {
+            int documentCount = 0;
+            double docMatchScore = 0;
+            List<DocumentEntity> docs = documentSample(group.groupId());
+            for (DocumentEntity doc : docs) {
+                documentCount++;
+                docMatchScore += normalizedTokenHits(queryTokens, safeText(doc.getFileName()));
+            }
+            double groupMatchScore = normalizedTokenHits(queryTokens, safeText(group.groupName())) * 3D;
+            double descriptionScore = normalizedTokenHits(queryTokens, safeText(group.description())) * 1.5D;
+            double totalScore = groupMatchScore + descriptionScore + Math.min(docMatchScore, 3D);
+            // 记录文档数量作为弱信号，避免没有任何词命中时完全丢失候选。
+            scored.add(new ScoredGroup(
+                    group.groupId(),
+                    group.groupName(),
+                    totalScore,
+                    documentCount,
+                    buildScoreReason(totalScore, groupMatchScore, descriptionScore, docMatchScore, documentCount)
+            ));
+        }
+        scored.sort((a, b) -> {
+            int byScore = Double.compare(b.score(), a.score());
+            if (byScore != 0) {
+                return byScore;
+            }
+            int byDocs = Integer.compare(b.documentCount(), a.documentCount());
+            return byDocs != 0 ? byDocs : Long.compare(a.groupId(), b.groupId());
+        });
+        return scored.stream()
+                .limit(maxGroups)
+                .map(item -> new RoutedKnowledgeGroup(
+                        item.groupId(),
+                        item.groupName(),
+                        item.score(),
+                        item.reason()
+                ))
+                .toList();
+    }
+
+    /** 从可见组中筛选候选，同时保持请求顺序；非法候选直接忽略。 */
+    private List<VisibleGroup> filterCandidates(List<VisibleGroup> visibleGroups, List<Long> candidateGroupIds) {
+        if (candidateGroupIds == null || candidateGroupIds.isEmpty()) {
+            return visibleGroups;
+        }
+        Map<Long, VisibleGroup> index = new LinkedHashMap<>();
+        for (VisibleGroup group : visibleGroups) {
+            index.put(group.groupId(), group);
+        }
+        List<VisibleGroup> result = new ArrayList<>();
+        for (Long groupId : candidateGroupIds) {
+            VisibleGroup group = index.get(groupId);
+            if (group != null) {
+                result.add(group);
+            }
+        }
+        return result;
+    }
+
+    private List<DocumentEntity> documentSample(Long groupId) {
+        return documentMapper.selectList(
+                new LambdaQueryWrapper<DocumentEntity>()
+                        .eq(DocumentEntity::getGroupId, groupId)
+                        .eq(DocumentEntity::getStatus, "READY")
+                        .eq(DocumentEntity::getDeleted, false)
+                        .orderByDesc(DocumentEntity::getProcessedAt)
+                        .last("LIMIT " + docSampleLimit)
+        );
+    }
+
+    String buildScoreReason(
+            double totalScore,
+            double groupMatchScore,
+            double descriptionScore,
+            double documentMatchScore,
+            int documentCount
+    ) {
+        List<String> hits = new ArrayList<>();
+        if (groupMatchScore > 0) {
+            hits.add("知识库名称命中");
+        }
+        if (descriptionScore > 0) {
+            hits.add("描述命中");
+        }
+        if (documentMatchScore > 0) {
+            hits.add("文档名命中");
+        }
+        if (hits.isEmpty() && documentCount > 0) {
+            hits.add("候选库存在文档");
+        }
+        return hits.isEmpty() ? "无匹配" : String.join("、", hits);
+    }
+
+    static double normalizedTokenHits(Set<String> queryTokens, String text) {
+        if (queryTokens.isEmpty() || !StringUtils.hasText(text)) {
+            return 0;
+        }
+        String normalizedText = normalize(text);
+        int hits = 0;
+        for (String token : queryTokens) {
+            if (normalizedText.contains(token)) {
+                hits++;
+            }
+        }
+        return (double) hits / Math.max(1, queryTokens.size());
+    }
+
+    static Set<String> tokenize(String text) {
+        Set<String> tokens = new LinkedHashSet<>();
+        String normalized = normalize(text);
+        if (normalized.isEmpty()) {
+            return tokens;
+        }
+        for (String word : NON_WORD.split(normalized)) {
+            if (word.isEmpty()) {
+                continue;
+            }
+            if (isLatinOrDigit(word)) {
+                tokens.add(word.toLowerCase(Locale.ROOT));
+                // 英文按单词整体匹配；较短词也保留首字符提升召回。
+                if (word.length() >= 4) {
+                    tokens.add(word.substring(0, 3).toLowerCase(Locale.ROOT));
+                }
+            } else {
+                for (int i = 0; i <= word.length() - CJK_BIGRAM_SIZE; i++) {
+                    tokens.add(word.substring(i, i + CJK_BIGRAM_SIZE));
+                }
+            }
+        }
+        return tokens;
+    }
+
+    static String normalize(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.toLowerCase(Locale.ROOT).replaceAll("\\s+", "");
+    }
+
+    static boolean isLatinOrDigit(String word) {
+        return word.matches("[a-zA-Z0-9]+");
+    }
+
+    private static String safeText(String text) {
+        return text == null ? "" : text;
+    }
+
+    private record ScoredGroup(
+            Long groupId,
+            String groupName,
+            double score,
+            int documentCount,
+            String reason
+    ) {
+    }
+
+    /** 自动路由结果。 */
+    public record RoutedKnowledgeGroup(
+            Long groupId,
+            String groupName,
+            double score,
+            String reason
+    ) {
+    }
+}

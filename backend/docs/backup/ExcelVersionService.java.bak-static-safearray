@@ -1,0 +1,434 @@
+package com.argus.rag.excel.service;
+
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
+import com.argus.rag.auth.CurrentUserService;
+import com.argus.rag.common.exception.BusinessException;
+import com.argus.rag.common.exception.ErrorCodes;
+import com.argus.rag.excel.entity.*;
+import com.argus.rag.excel.mapper.*;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.*;
+
+/**
+ * 文档版本快照与一键回滚。
+ * <p>
+ * 每个文档保留最近 N 个版本（默认 10，可在线调整），
+ * 版本内容按“版本主表 → 版本 Sheet → 版本分块”三层落库。
+ */
+@Service
+public class ExcelVersionService {
+
+    private static final Logger log = LoggerFactory.getLogger(ExcelVersionService.class);
+
+    public static final String TYPE_MANUAL = "MANUAL";
+    public static final String TYPE_STRUCTURE = "STRUCTURE";
+    public static final String TYPE_CELL = "CELL";
+    public static final String TYPE_ROLLBACK_POINT = "ROLLBACK_POINT";
+
+    private final ExcelDocumentVersionMapper versionMapper;
+    private final ExcelDocumentVersionSheetMapper versionSheetMapper;
+    private final ExcelDocumentVersionChunkMapper versionChunkMapper;
+    private final ExcelDocumentService documentService;
+    private final ExcelSheetService sheetService;
+    private final ExcelSystemConfigService configService;
+    private final ExcelDocumentLockService lockService;
+    private final CurrentUserService currentUserService;
+
+    public ExcelVersionService(ExcelDocumentVersionMapper versionMapper,
+                               ExcelDocumentVersionSheetMapper versionSheetMapper,
+                               ExcelDocumentVersionChunkMapper versionChunkMapper,
+                               ExcelDocumentService documentService,
+                               ExcelSheetService sheetService,
+                               ExcelSystemConfigService configService,
+                               ExcelDocumentLockService lockService,
+                               CurrentUserService currentUserService) {
+        this.versionMapper = versionMapper;
+        this.versionSheetMapper = versionSheetMapper;
+        this.versionChunkMapper = versionChunkMapper;
+        this.documentService = documentService;
+        this.sheetService = sheetService;
+        this.configService = configService;
+        this.lockService = lockService;
+        this.currentUserService = currentUserService;
+    }
+
+    /** 为当前文档创建完整快照。调用方需持有文档写锁。 */
+    @Transactional(rollbackFor = Exception.class)
+    public ExcelDocumentVersion createSnapshot(Long documentId, String snapshotType, String summary) {
+        ExcelDocument document = documentService.optionalById(documentId);
+        if (document == null || Integer.valueOf(3).equals(document.getStatus())) {
+            throw new BusinessException(ErrorCodes.EXCEL_NOT_FOUND, "文档不存在");
+        }
+        if (Integer.valueOf(2).equals(document.getStatus())) {
+            throw new BusinessException(ErrorCodes.EXCEL_TRASH_STATE, "文档已移入回收站，无法创建版本快照");
+        }
+
+        CurrentUserService.CurrentUser user = null;
+        try {
+            user = currentUserService.getRequiredCurrentUser();
+        } catch (Exception ignored) {
+        }
+
+        ExcelDocumentVersion versionRow = new ExcelDocumentVersion();
+        versionRow.setDocumentId(documentId);
+        versionRow.setDocVersion(document.getVersion());
+        versionRow.setSnapshotType(snapshotType == null ? TYPE_MANUAL : snapshotType);
+        versionRow.setCreatorId(user == null ? null : user.userId());
+        versionRow.setCreatorName(user == null ? null : user.userCode());
+        versionRow.setSummary(clampSummary(summary));
+        versionRow.setSheetCount(0);
+        versionRow.setCellCount(0L);
+        versionMapper.insert(versionRow);
+
+        List<ExcelSheet> sheets = sheetService.listSheetsByDocumentId(documentId);
+        long cellCount = 0L;
+        for (ExcelSheet sheet : sheets) {
+            ExcelDocumentVersionSheet versionSheet = new ExcelDocumentVersionSheet();
+            versionSheet.setVersionId(versionRow.getId());
+            versionSheet.setSheetIndex(sheet.getSheetIndex());
+            versionSheet.setSheetName(sheet.getSheetName());
+            versionSheet.setTotalRows(sheet.getTotalRows());
+            versionSheet.setTotalCols(sheet.getTotalCols());
+            versionSheet.setChunkCount(0);
+            versionSheet.setMergeConfigJson(sheet.getMergeConfigJson());
+            versionSheet.setColumnLenJson(sheet.getColumnLenJson());
+            versionSheet.setRowLenJson(sheet.getRowLenJson());
+            versionSheet.setConfigJson(sheet.getConfigJson());
+            versionSheet.setHyperlinkConfigJson(sheet.getHyperlinkConfigJson());
+            versionSheet.setImagesConfigJson(sheet.getImagesConfigJson());
+            versionSheet.setConditionFormatJson(sheet.getConditionFormatJson());
+            versionSheet.setChartJson(sheet.getChartJson());
+            versionSheet.setActive(sheet.getActive());
+            versionSheetMapper.insert(versionSheet);
+
+            int chunkCount = 0;
+            for (ExcelSheetChunk chunk : sheetService.listChunksBySheetId(sheet.getId())) {
+                ExcelDocumentVersionChunk versionChunk = new ExcelDocumentVersionChunk();
+                versionChunk.setVersionId(versionRow.getId());
+                versionChunk.setVersionSheetId(versionSheet.getId());
+                versionChunk.setChunkIndex(chunk.getChunkIndex());
+                versionChunk.setRowStart(chunk.getRowStart());
+                versionChunk.setRowEnd(chunk.getRowEnd());
+                versionChunk.setCelldataJson(chunk.getCelldataJson());
+                versionChunkMapper.insert(versionChunk);
+                cellCount += safeArraySize(chunk.getCelldataJson());
+                chunkCount++;
+            }
+            versionSheet.setChunkCount(chunkCount);
+            versionSheetMapper.updateById(versionSheet);
+        }
+
+        versionRow.setSheetCount(sheets.size());
+        versionRow.setCellCount(cellCount);
+        versionMapper.updateById(versionRow);
+        pruneOldVersions(documentId);
+        log.info("文档版本快照已创建: doc={}, versionId={}, type={}, cells={}",
+                documentId, versionRow.getId(), versionRow.getSnapshotType(), cellCount);
+        return versionRow;
+    }
+
+    /** 手动保存版本（不要求传 lock，直接按乐观语义入库）。 */
+    public ExcelDocumentVersion manualSnapshot(Long documentId, String summary) {
+        return lockService.withLock(documentId, () -> createSnapshot(documentId, TYPE_MANUAL, summary));
+    }
+
+    /** 单元格批量保存达到间隔后自动快照；失败不阻断保存。 */
+    public void tryAutoCellSnapshot(Long documentId, int changedCellCount) {
+        if (documentId == null || changedCellCount <= 0) return;
+        ExcelDocumentVersion latest = latestVersion(documentId);
+        LocalDateTime cutoff = LocalDateTime.now()
+                .minusMinutes(Math.max(configService.getAutoCellIntervalMinutes(), 1));
+        if (latest != null && latest.getCreateTime() != null && latest.getCreateTime().isAfter(cutoff)) {
+            return;
+        }
+        try {
+            createSnapshot(documentId, TYPE_CELL, "单元格批量保存自动快照");
+        } catch (Exception e) {
+            log.warn("自动单元格版本快照失败: doc={}, error={}", documentId, e.getMessage());
+        }
+    }
+
+    /** 结构保存后自动快照；失败不阻断工作簿保存成功。 */
+    public void tryAfterStructureSave(Long documentId) {
+        try {
+            createSnapshot(documentId, TYPE_STRUCTURE, "工作簿结构保存自动快照");
+        } catch (Exception e) {
+            log.warn("结构保存自动版本快照失败: doc={}, error={}", documentId, e.getMessage());
+        }
+    }
+
+    public Page<ExcelDocumentVersion> pageVersions(Long documentId, int pageNum, int pageSize) {
+        Page<ExcelDocumentVersion> page = new Page<>(Math.max(pageNum, 1), Math.max(pageSize, 1));
+        QueryWrapper<ExcelDocumentVersion> qw = new QueryWrapper<>();
+        qw.eq("document_id", documentId)
+                .orderByDesc("create_time")
+                .orderByDesc("id");
+        return versionMapper.selectPage(page, qw);
+    }
+
+    public ExcelDocumentVersion latestVersion(Long documentId) {
+        QueryWrapper<ExcelDocumentVersion> qw = new QueryWrapper<>();
+        qw.eq("document_id", documentId)
+                .orderByDesc("create_time")
+                .orderByDesc("id")
+                .last("LIMIT 1");
+        return versionMapper.selectOne(qw);
+    }
+
+    public ExcelDocumentVersion getVersion(Long versionId) {
+        return versionMapper.selectById(versionId);
+    }
+
+    /** 版本详情（不含 celldata 全文）。 */
+    public Map<String, Object> versionDetail(Long versionId) {
+        ExcelDocumentVersion version = versionMapper.selectById(versionId);
+        if (version == null) return null;
+        Map<String, Object> result = versionMap(version);
+        List<Map<String, Object>> sheets = new ArrayList<>();
+        for (ExcelDocumentVersionSheet vs : listVersionSheets(versionId)) {
+            Map<String, Object> sheet = new LinkedHashMap<>();
+            sheet.put("id", vs.getId());
+            sheet.put("sheetIndex", vs.getSheetIndex());
+            sheet.put("sheetName", vs.getSheetName());
+            sheet.put("totalRows", vs.getTotalRows());
+            sheet.put("totalCols", vs.getTotalCols());
+            sheet.put("chunkCount", vs.getChunkCount());
+            sheets.add(sheet);
+        }
+        result.put("sheets", sheets);
+        return result;
+    }
+
+    /** 版本预览：还原成 Luckysheet/Univer 工作表数组（含 celldata）。 */
+    public Map<String, Object> previewVersion(Long versionId) {
+        ExcelDocumentVersion version = versionMapper.selectById(versionId);
+        if (version == null) return null;
+        Map<String, Object> result = versionMap(version);
+        List<Map<String, Object>> sheets = new ArrayList<>();
+        for (ExcelDocumentVersionSheet vs : listVersionSheets(versionId)) {
+            Map<String, Object> sheet = new LinkedHashMap<>();
+            sheet.put("name", vs.getSheetName());
+            sheet.put("index", vs.getSheetIndex());
+            sheet.put("row", vs.getTotalRows() == null ? 0 : vs.getTotalRows());
+            sheet.put("column", vs.getTotalCols() == null ? 0 : vs.getTotalCols());
+            sheet.put("status", Integer.valueOf(1).equals(vs.getActive()) ? 1 : 0);
+            sheet.put("config", parseObject(vs.getConfigJson()));
+            sheet.put("hyperlink", parseObject(vs.getHyperlinkConfigJson()));
+            sheet.put("images", parseObject(vs.getImagesConfigJson()));
+            sheet.put("luckysheet_conditionformat_save", parseArray(vs.getConditionFormatJson()));
+            sheet.put("chart", parseArray(vs.getChartJson()));
+            JSONArray celldata = new JSONArray();
+            for (ExcelDocumentVersionChunk vc : listVersionChunks(vs.getId())) {
+                JSONArray cells = parseArray(vc.getCelldataJson());
+                if (cells != null) celldata.addAll(cells);
+            }
+            sheet.put("celldata", celldata);
+            sheets.add(sheet);
+        }
+        result.put("sheets", sheets);
+        return result;
+    }
+
+    /** 回滚：先自动保存当前状态，再按版本重建工作簿并推进文档版本号。 */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> restoreVersion(Long documentId, Long versionId) {
+        ExcelDocumentVersion target = versionMapper.selectById(versionId);
+        if (target == null || !documentId.equals(target.getDocumentId())) {
+            throw new BusinessException(ErrorCodes.EXCEL_NOT_FOUND, "版本不存在或不属于当前文档");
+        }
+        VersionData data = readVersionData(versionId);
+        if (data.sheets().isEmpty()) {
+            throw new BusinessException(ErrorCodes.EXCEL_NOT_FOUND, "版本内容为空，无法回滚");
+        }
+        createSnapshot(documentId, TYPE_ROLLBACK_POINT,
+                "回滚到版本 #" + target.getId() + " 前的自动保存");
+        sheetService.hardDeleteByDocumentId(documentId);
+        List<String> sheetNames = rebuildSheets(documentId, data);
+        documentService.updateSheetMeta(documentId, sheetNames.size(), JSON.toJSONString(sheetNames));
+        long newVersion = documentService.bumpVersion(documentId);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("documentId", documentId);
+        result.put("versionId", versionId);
+        result.put("version", newVersion);
+        result.put("sheetCount", sheetNames.size());
+        log.info("文档版本回滚成功: doc={}, versionId={}", documentId, versionId);
+        return result;
+    }
+
+    public void deleteByDocumentId(Long documentId) {
+        List<Long> versionIds = listVersionIds(documentId);
+        if (versionIds.isEmpty()) return;
+        versionChunkMapper.delete(new QueryWrapper<ExcelDocumentVersionChunk>()
+                .in("version_id", versionIds));
+        versionSheetMapper.delete(new QueryWrapper<ExcelDocumentVersionSheet>()
+                .in("version_id", versionIds));
+        versionMapper.delete(new QueryWrapper<ExcelDocumentVersion>()
+                .in("id", versionIds));
+    }
+
+    private List<String> rebuildSheets(Long documentId, VersionData data) {
+        List<String> names = new ArrayList<>();
+        for (VersionSheetData sheetData : data.sheets()) {
+            ExcelSheet sheet = new ExcelSheet();
+            sheet.setDocumentId(documentId);
+            sheet.setSheetIndex(sheetData.index());
+            sheet.setSheetName(sheetData.name());
+            sheet.setTotalRows(sheetData.totalRows());
+            sheet.setTotalCols(sheetData.totalCols());
+            sheet.setChunkCount(0);
+            sheet.setMergeConfigJson(sheetData.mergeConfigJson());
+            sheet.setColumnLenJson(sheetData.columnLenJson());
+            sheet.setRowLenJson(sheetData.rowLenJson());
+            sheet.setConfigJson(sheetData.configJson());
+            sheet.setHyperlinkConfigJson(sheetData.hyperlinkConfigJson());
+            sheet.setImagesConfigJson(sheetData.imagesConfigJson());
+            sheet.setConditionFormatJson(sheetData.conditionFormatJson());
+            sheet.setChartJson(sheetData.chartJson());
+            sheet.setActive(sheetData.active());
+            sheet.setStatus(1);
+            sheetService.insertSheetWithoutHistory(sheet);
+            names.add(sheet.getSheetName());
+
+            int count = 0;
+            for (VersionChunkData chunkData : sheetData.chunks()) {
+                sheetService.insertChunkWithoutHistory(documentId, sheet.getId(),
+                        chunkData.index(), chunkData.rowStart(), chunkData.rowEnd(),
+                        chunkData.celldataJson());
+                count++;
+            }
+            sheetService.updateChunkCount(sheet.getId(), count);
+        }
+        return names;
+    }
+
+    private VersionData readVersionData(Long versionId) {
+        List<VersionSheetData> sheets = new ArrayList<>();
+        for (ExcelDocumentVersionSheet vs : listVersionSheets(versionId)) {
+            List<VersionChunkData> chunks = new ArrayList<>();
+            for (ExcelDocumentVersionChunk vc : listVersionChunks(vs.getId())) {
+                chunks.add(new VersionChunkData(
+                        vc.getChunkIndex(), vc.getRowStart(), vc.getRowEnd(), vc.getCelldataJson()));
+            }
+            sheets.add(new VersionSheetData(
+                    vs.getSheetIndex(), vs.getSheetName(), vs.getTotalRows(), vs.getTotalCols(),
+                    vs.getMergeConfigJson(), vs.getColumnLenJson(), vs.getRowLenJson(),
+                    vs.getConfigJson(), vs.getHyperlinkConfigJson(), vs.getImagesConfigJson(),
+                    vs.getConditionFormatJson(), vs.getChartJson(), vs.getActive(),
+                    chunks));
+        }
+        return new VersionData(sheets);
+    }
+
+    private List<ExcelDocumentVersionSheet> listVersionSheets(Long versionId) {
+        QueryWrapper<ExcelDocumentVersionSheet> qw = new QueryWrapper<>();
+        qw.eq("version_id", versionId).orderByAsc("sheet_index");
+        return versionSheetMapper.selectList(qw);
+    }
+
+    private List<ExcelDocumentVersionChunk> listVersionChunks(Long versionSheetId) {
+        QueryWrapper<ExcelDocumentVersionChunk> qw = new QueryWrapper<>();
+        qw.eq("version_sheet_id", versionSheetId).orderByAsc("chunk_index");
+        return versionChunkMapper.selectList(qw);
+    }
+
+    private List<Long> listVersionIds(Long documentId) {
+        QueryWrapper<ExcelDocumentVersion> qw = new QueryWrapper<>();
+        qw.eq("document_id", documentId).select("id");
+        List<Long> ids = new ArrayList<>();
+        for (Object value : versionMapper.selectObjs(qw)) {
+            if (value instanceof Number number) ids.add(number.longValue());
+        }
+        return ids;
+    }
+
+    private void pruneOldVersions(Long documentId) {
+        int retention = Math.max(configService.getRetentionCount(), 1);
+        QueryWrapper<ExcelDocumentVersion> qw = new QueryWrapper<>();
+        qw.eq("document_id", documentId)
+                .orderByDesc("create_time")
+                .orderByDesc("id")
+                .select("id");
+        List<Long> ids = new ArrayList<>();
+        for (Object value : versionMapper.selectObjs(qw)) {
+            if (value instanceof Number number) ids.add(number.longValue());
+        }
+        if (ids.size() <= retention) return;
+        List<Long> remove = new ArrayList<>(ids.subList(retention, ids.size()));
+        versionChunkMapper.delete(new QueryWrapper<ExcelDocumentVersionChunk>().in("version_id", remove));
+        versionSheetMapper.delete(new QueryWrapper<ExcelDocumentVersionSheet>().in("version_id", remove));
+        versionMapper.delete(new QueryWrapper<ExcelDocumentVersion>().in("id", remove));
+    }
+
+    private Map<String, Object> versionMap(ExcelDocumentVersion version) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("id", version.getId());
+        map.put("documentId", version.getDocumentId());
+        map.put("docVersion", version.getDocVersion());
+        map.put("snapshotType", version.getSnapshotType());
+        map.put("creatorId", version.getCreatorId());
+        map.put("creatorName", version.getCreatorName());
+        map.put("summary", version.getSummary());
+        map.put("sheetCount", version.getSheetCount());
+        map.put("cellCount", version.getCellCount());
+        map.put("createTime", version.getCreateTime());
+        return map;
+    }
+
+    private String clampSummary(String summary) {
+        if (summary == null || summary.isBlank()) return "版本快照";
+        String trimmed = summary.trim();
+        return trimmed.length() > 500 ? trimmed.substring(0, 500) : trimmed;
+    }
+
+    private JSONObject parseObject(String json) {
+        if (json == null || json.isBlank()) return new JSONObject();
+        try {
+            JSONObject parsed = JSON.parseObject(json);
+            return parsed == null ? new JSONObject() : parsed;
+        } catch (Exception e) {
+            return new JSONObject();
+        }
+    }
+
+    private JSONArray parseArray(String json) {
+        if (json == null || json.isBlank()) return new JSONArray();
+        try {
+            JSONArray parsed = JSON.parseArray(json);
+            return parsed == null ? new JSONArray() : parsed;
+        } catch (Exception e) {
+            return new JSONArray();
+        }
+    }
+
+    private int safeArraySize(String json) {
+        try {
+            JSONArray array = JSON.parseArray(json);
+            return array == null ? 0 : array.size();
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private record VersionData(List<VersionSheetData> sheets) {
+    }
+
+    private record VersionSheetData(Integer index, String name, Integer totalRows, Integer totalCols,
+                                     String mergeConfigJson, String columnLenJson, String rowLenJson,
+                                     String configJson, String hyperlinkConfigJson, String imagesConfigJson,
+                                     String conditionFormatJson, String chartJson, Integer active,
+                                     List<VersionChunkData> chunks) {
+    }
+
+    private record VersionChunkData(Integer index, Integer rowStart, Integer rowEnd, String celldataJson) {
+    }
+}

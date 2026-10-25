@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-23T23:36:24+08:00",
+  "project": {
+    "name": "Argus Loom",
+    "root": "F:\\ChatGPT\\argus-loom",
+    "description": "Enterprise knowledge base, cited RAG, AI assistant, collaborative Excel and finance analysis",
+    "branch": "master",
+    "baseline_commit": "2d7ed06",
+    "worktree_has_uncommitted_user_changes": true
+  },
+  "stack": {
+    "backend": [
+      "Java 21",
+      "Spring Boot 3.5.0",
+      "Spring AI 1.1.2",
+      "Spring AI Alibaba 1.1.2.0",
+      "MyBatis-Plus 3.5.15",
+      "Flyway",
+      "PostgreSQL + pgvector",
+      "Elasticsearch 8",
+      "MinIO",
+      "WebSocket / STOMP"
+    ],
+    "frontend": [
+      "Vue 3",
+      "TypeScript",
+      "Vite 8",
+      "Pinia",
+      "Element Plus",
+      "UniverJS 0.25.x",
+      "Vitest"
+    ],
+    "not_currently_present": [
+      "Redis server",
+      "RabbitMQ",
+      "Real cross-encoder reranker"
+    ]
+  },
+  "verification": {
+    "date": "2026-10-23",
+    "backend": {
+      "command": "mvn -o test",
+      "tests": 1614,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "success": true
+    },
+    "frontend_test": {
+      "command": "npm test",
+      "test_files": 3,
+      "tests": 14,
+      "success": true
+    },
+    "frontend_build": {
+      "command": "npm run build",
+      "success": true,
+      "warning": "vendor-univer chunk is approximately 11.4 MB"
+    }
+  },
+  "authoritative_docs": [
+    "AGENTS.md",
+    "ai-handoff/START_HERE.md",
+    "ai-handoff/PROJECT_TRUTH.md",
+    "ai-handoff/ARCHITECTURE.md",
+    "ai-handoff/DEVELOPMENT_GUIDE.md",
+    "ai-handoff/MEMORY_EXPORT.md",
+    "ai-handoff/DECISIONS_AND_CONSTRAINTS.md",
+    "ai-handoff/ROADMAP_AND_BACKLOG.md",
+    "ai-handoff/SOURCE_AND_DOC_INDEX.md",
+    "ai-handoff/ZCODE_START_PROMPTS.md"
+  ],
+  "critical_invariants": [
+    "Do not modify executed Flyway migrations V1-V8",
+    "Do not bypass backend permission gates",
+    "Document ETL uses background_job and is at-least-once",
+    "Excel export uses excelExportExecutor",
+    "RerankingService defaults to NoOp",
+    "No real Redis or RabbitMQ dependency is currently present",
+    "Never package .env, uploads, logs, database dumps or real finance data"
+  ],
+  "known_document_conflicts": [
+    {
+      "source": "MEMORY.md",
+      "issue": "Claims the directory is not a Git repository",
+      "resolution": "The directory is a Git repository"
+    },
+    {
+      "source": "docs/architecture/index.html",
+      "issue": "Shows a Redis node",
+      "resolution": "No Redis dependency currently exists"
+    },
+    {
+      "source": ".zcode/plans",
+      "issue": "Some plans describe the removed event-based ETL path",
+      "resolution": "Document ETL now enqueues INGEST_DOCUMENT in background_job"
+    },
+    {
+      "source": "historical memory",
+      "issue": "Records 1616 backend tests",
+      "resolution": "Current verified result is 1614"
+    }
+  ]
+}

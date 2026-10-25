@@ -1,0 +1,584 @@
+package com.argus.rag.excel.service;
+
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
+import com.argus.rag.common.exception.BusinessException;
+import com.argus.rag.common.exception.ErrorCodes;
+import com.argus.rag.excel.entity.ExcelSheet;
+import com.argus.rag.excel.entity.ExcelSheetChunk;
+import com.argus.rag.excel.entity.ExcelSheetChunkDelta;
+import com.argus.rag.excel.mapper.ExcelSheetChunkDeltaMapper;
+import com.argus.rag.excel.mapper.ExcelSheetChunkMapper;
+import com.argus.rag.excel.mapper.ExcelSheetMapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.*;
+
+/**
+ * Excel Sheet 及数据分块查询 / 写入服务
+ */
+@Service
+public class ExcelSheetService {
+
+private final ExcelSheetMapper sheetMapper;
+    private final ExcelSheetChunkMapper chunkMapper;
+    private final ExcelSheetChunkDeltaMapper deltaMapper;
+    private final ExcelDocumentService documentService;
+    private final RedisChunkCacheService cacheService;
+    private static final Logger log = LoggerFactory.getLogger(ExcelSheetService.class);
+
+    public ExcelSheetService(ExcelSheetMapper sheetMapper,
+                             ExcelSheetChunkMapper chunkMapper,
+                             ExcelSheetChunkDeltaMapper deltaMapper,
+                             ExcelDocumentService documentService,
+                             RedisChunkCacheService cacheService) {
+        this.sheetMapper = sheetMapper;
+        this.chunkMapper = chunkMapper;
+        this.deltaMapper = deltaMapper;
+        this.documentService = documentService;
+        this.cacheService = cacheService;
+    }
+
+    public List<ExcelSheet> listSheetsByDocumentId(Long documentId) {
+        try {
+            QueryWrapper<ExcelSheet> qw = new QueryWrapper<>();
+            qw.eq("document_id", documentId)
+              .eq("status", 1)
+              .orderByAsc("sheet_index");
+            return sheetMapper.selectList(qw);
+        } catch (Exception e) {
+            log.error("查询 Sheet 列表失败: documentId={}", documentId, e);
+            throw new BusinessException(ErrorCodes.EXCEL_PARSE_ERROR, "查询 Sheet 列表失败");
+        }
+    }
+
+    public List<ExcelSheetChunk> listChunksBySheetId(Long sheetId) {
+        // 先查 ExcelSheet 获取 documentId 用于缓存 key
+        ExcelSheet sheet = sheetMapper.selectById(sheetId);
+        List<ExcelSheetChunk> chunks = listRawChunksBySheetId(sheetId);
+        if (chunks.isEmpty()) {
+            return chunks;
+        }
+        mergeDeltasInto(chunks);
+        // 写回缓存
+        if (sheet != null) {
+            for (ExcelSheetChunk chunk : chunks) {
+                if (chunk.getDocumentId() != null && chunk.getCelldataJson() != null) {
+                    cacheService.put(chunk.getDocumentId(), chunk.getSheetId(),
+                            chunk.getChunkIndex(), chunk.getCelldataJson());
+                }
+            }
+        }
+        return chunks;
+    }
+
+    private List<ExcelSheetChunk> listRawChunksBySheetId(Long sheetId) {
+        QueryWrapper<ExcelSheetChunk> qw = new QueryWrapper<>();
+        qw.eq("sheet_id", sheetId).orderByAsc("chunk_index");
+        return chunkMapper.selectList(qw);
+    }
+
+    private Map<Integer, List<ExcelSheetChunkDelta>> loadDeltasBySheet(Long sheetId) {
+        QueryWrapper<ExcelSheetChunkDelta> qw = new QueryWrapper<>();
+        qw.eq("sheet_id", sheetId);
+        Map<Integer, List<ExcelSheetChunkDelta>> byChunk = new HashMap<>();
+        for (ExcelSheetChunkDelta delta : deltaMapper.selectList(qw)) {
+            byChunk.computeIfAbsent(delta.getChunkIndex(), k -> new ArrayList<>()).add(delta);
+        }
+        return byChunk;
+    }
+
+    private List<ExcelSheetChunkDelta> loadDeltasByChunk(Long sheetId, int chunkIndex) {
+        QueryWrapper<ExcelSheetChunkDelta> qw = new QueryWrapper<>();
+        qw.eq("sheet_id", sheetId).eq("chunk_index", chunkIndex);
+        return deltaMapper.selectList(qw);
+    }
+
+    private void mergeDeltasInto(List<ExcelSheetChunk> chunks) {
+        if (chunks == null || chunks.isEmpty()) {
+            return;
+        }
+        Long sheetId = chunks.get(0).getSheetId();
+        Map<Integer, List<ExcelSheetChunkDelta>> byChunk = loadDeltasBySheet(sheetId);
+        if (byChunk.isEmpty()) {
+            return;
+        }
+        for (ExcelSheetChunk chunk : chunks) {
+            List<ExcelSheetChunkDelta> deltas = byChunk.getOrDefault(chunk.getChunkIndex(), List.of());
+            if (!deltas.isEmpty()) {
+                chunk.setCelldataJson(SheetChunkMerger.merge(chunk.getCelldataJson(), deltas).toJSONString());
+            }
+        }
+    }
+
+    /** 根据 Sheet ID 返回未删除的 Sheet，不存在时返回 null。 */
+    public ExcelSheet getSheetById(Long sheetId) {
+        if (sheetId == null) return null;
+        ExcelSheet sheet = sheetMapper.selectById(sheetId);
+        return sheet != null && Integer.valueOf(3).equals(sheet.getStatus()) ? null : sheet;
+    }
+
+    /** 按行范围读取某个 Sheet 的 Chunk（含空行补位逻辑前的原始分块）。 */
+    public List<ExcelSheetChunk> getSheetChunksByRange(Long sheetId, int rowStart, int rowEnd) {
+        QueryWrapper<ExcelSheetChunk> qw = new QueryWrapper<>();
+        qw.eq("sheet_id", sheetId)
+                .le("row_start", rowEnd)
+                .ge("row_end", rowStart)
+                .orderByAsc("chunk_index");
+        List<ExcelSheetChunk> chunks = chunkMapper.selectList(qw);
+        mergeDeltasInto(chunks);
+        return chunks;
+    }
+
+    /** 按块索引范围读取某个 Sheet 的 Chunk（start/end 为块序号，含端点，合并增量后返回）。 */
+    public List<ExcelSheetChunk> loadChunksByIndexRange(Long sheetId, int startChunk, int endChunk) {
+        QueryWrapper<ExcelSheetChunk> qw = new QueryWrapper<>();
+        qw.eq("sheet_id", sheetId)
+                .ge("chunk_index", Math.max(startChunk, 0))
+                .le("chunk_index", Math.max(endChunk, startChunk))
+                .orderByAsc("chunk_index");
+        List<ExcelSheetChunk> chunks = chunkMapper.selectList(qw);
+        mergeDeltasInto(chunks);
+        return chunks;
+    }
+
+    /** 重新加载单元格当前值；未找到返回 null。 */
+    public Map<String, Object> loadCellSnapshot(Long documentId, Long sheetId, int r, int c) {
+        ExcelSheet sheet = getSheetById(sheetId);
+        if (sheet == null) return null;
+        int chunkIndex = r / ExcelParserService.CHUNK_SIZE;
+        QueryWrapper<ExcelSheetChunk> qw = new QueryWrapper<>();
+        qw.eq("sheet_id", sheetId).eq("chunk_index", chunkIndex);
+        ExcelSheetChunk chunk = chunkMapper.selectOne(qw);
+        if (chunk == null) {
+            return null;
+        }
+        List<ExcelSheetChunkDelta> deltas = deltaMapper.selectList(
+                new QueryWrapper<ExcelSheetChunkDelta>()
+                        .eq("sheet_id", sheetId)
+                        .eq("chunk_index", chunkIndex));
+        JSONArray cells = SheetChunkMerger.merge(chunk.getCelldataJson(), deltas);
+        for (int i = 0; i < cells.size(); i++) {
+            JSONObject cell = cells.getJSONObject(i);
+            if (cell.getIntValue("r") == r && cell.getIntValue("c") == c) {
+                return cell;
+            }
+        }
+        return null;
+    }
+
+    /** 加载 Sheet 全部分块的最终数据（基数 + 增量合并后）。 */
+    public JSONArray loadMergedCelldata(Long sheetId) {
+        JSONArray all = new JSONArray();
+        for (ExcelSheetChunk chunk : listChunksBySheetId(sheetId)) {
+            if (chunk.getCelldataJson() == null || chunk.getCelldataJson().isEmpty()) {
+                continue;
+            }
+            all.addAll(JSONArray.parseArray(chunk.getCelldataJson()));
+        }
+        return all;
+    }
+
+    /** 物理删除 Chunk + 软删除 Sheet（版本回滚重建前调用）。 */
+    @Transactional(rollbackFor = Exception.class)
+    public void hardDeleteByDocumentId(Long documentId) {
+        QueryWrapper<ExcelSheetChunk> chunkQw = new QueryWrapper<>();
+        chunkQw.eq("document_id", documentId);
+        chunkMapper.delete(chunkQw);
+        QueryWrapper<ExcelSheetChunkDelta> deltaQw = new QueryWrapper<>();
+        deltaQw.eq("document_id", documentId);
+        deltaMapper.delete(deltaQw);
+
+        ExcelSheet deleted = new ExcelSheet();
+        deleted.setStatus(3);
+        QueryWrapper<ExcelSheet> sheetQw = new QueryWrapper<>();
+        sheetQw.eq("document_id", documentId);
+        sheetMapper.update(deleted, sheetQw);
+    }
+
+    /** 无历史批次插入 Sheet（版本回滚 / 恢复时使用）。 */
+    @Transactional(rollbackFor = Exception.class)
+    public ExcelSheet insertSheetWithoutHistory(ExcelSheet sheet) {
+        if (sheet.getStatus() == null) sheet.setStatus(1);
+        if (sheet.getChunkCount() == null) sheet.setChunkCount(0);
+        sheetMapper.insert(sheet);
+        return sheet;
+    }
+
+    /** 无历史批次插入 Chunk（版本回滚 / 恢复时使用）。 */
+    @Transactional(rollbackFor = Exception.class)
+    public ExcelSheetChunk insertChunkWithoutHistory(Long documentId, Long sheetId,
+                                                      Integer chunkIndex, Integer rowStart,
+                                                      Integer rowEnd, String celldataJson) {
+        ExcelSheetChunk chunk = new ExcelSheetChunk();
+        chunk.setDocumentId(documentId);
+        chunk.setSheetId(sheetId);
+        chunk.setChunkIndex(chunkIndex);
+        chunk.setRowStart(rowStart);
+        chunk.setRowEnd(rowEnd);
+        chunk.setCelldataJson(celldataJson == null ? "[]" : celldataJson);
+        chunkMapper.insert(chunk);
+        return chunk;
+    }
+
+    /** 更新 Sheet 分块计数。 */
+    @Transactional(rollbackFor = Exception.class)
+    public void updateChunkCount(Long sheetId, int chunkCount) {
+        ExcelSheet update = new ExcelSheet();
+        update.setId(sheetId);
+        update.setChunkCount(chunkCount);
+        sheetMapper.updateById(update);
+    }
+
+    /** 历史批次写入入口：与普通批量更新共用同一分块回写逻辑。 */
+    @Transactional(rollbackFor = Exception.class)
+    public void applyHistoryBatch(Long documentId, List<Map<String, Object>> updates) {
+        if (updates == null || updates.isEmpty()) return;
+        batchUpdateCells(documentId, updates);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteByDocumentId(Long documentId) {
+        ExcelSheet update = new ExcelSheet();
+        update.setStatus(3);
+        QueryWrapper<ExcelSheet> sheetQw = new QueryWrapper<>();
+        sheetQw.eq("document_id", documentId);
+        sheetMapper.update(update, sheetQw);
+
+        QueryWrapper<ExcelSheetChunk> chunkQw = new QueryWrapper<>();
+        chunkQw.eq("document_id", documentId);
+        chunkMapper.delete(chunkQw);
+        QueryWrapper<ExcelSheetChunkDelta> deltaQw = new QueryWrapper<>();
+        deltaQw.eq("document_id", documentId);
+        deltaMapper.delete(deltaQw);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void batchUpdateCells(Long documentId, List<Map<String, Object>> updates) {
+        Map<String, List<Map<String, Object>>> chunkGroup = new HashMap<>();
+        int chunkSize = ExcelParserService.CHUNK_SIZE;
+
+        for (Map<String, Object> update : updates) {
+            Long sheetId = Long.parseLong(update.get("sheetId").toString());
+            int r = Integer.parseInt(update.get("r").toString());
+            int targetChunkIndex = r / chunkSize;
+            String key = sheetId + "_" + targetChunkIndex;
+            chunkGroup.computeIfAbsent(key, k -> new ArrayList<>()).add(update);
+        }
+
+        for (Map.Entry<String, List<Map<String, Object>>> entry : chunkGroup.entrySet()) {
+            String[] parts = entry.getKey().split("_");
+            Long sheetId = Long.parseLong(parts[0]);
+            int targetChunkIndex = Integer.parseInt(parts[1]);
+
+            QueryWrapper<ExcelSheetChunk> qw = new QueryWrapper<>();
+            qw.eq("sheet_id", sheetId).eq("chunk_index", targetChunkIndex);
+            ExcelSheetChunk chunk = chunkMapper.selectOne(qw);
+
+            if (chunk == null) {
+                chunk = new ExcelSheetChunk();
+                chunk.setDocumentId(documentId);
+                chunk.setSheetId(sheetId);
+                chunk.setChunkIndex(targetChunkIndex);
+                chunk.setRowStart(targetChunkIndex * chunkSize);
+                chunk.setRowEnd((targetChunkIndex + 1) * chunkSize - 1);
+                chunk.setCelldataJson("[]");
+                chunkMapper.insert(chunk);
+                ExcelSheet sheet = sheetMapper.selectById(sheetId);
+                if (sheet != null && sheet.getChunkCount() <= targetChunkIndex) {
+                    ExcelSheet sheetUpdate = new ExcelSheet();
+                    sheetUpdate.setId(sheetId);
+                    sheetUpdate.setChunkCount(targetChunkIndex + 1);
+                    sheetMapper.updateById(sheetUpdate);
+                }
+            }
+            saveDeltasForChunk(documentId, sheetId, targetChunkIndex, entry.getValue());
+            cacheService.invalidateSheet(documentId, sheetId);
+            maybeCompactSheetDeltas(sheetId);
+        }
+    }
+
+    private void saveDeltasForChunk(Long documentId, Long sheetId, Integer chunkIndex,
+                                    List<Map<String, Object>> updates) {
+        List<ExcelSheetChunkDelta> existing = loadDeltasByChunk(sheetId, chunkIndex);
+        Map<String, ExcelSheetChunkDelta> existingByCell = new HashMap<>();
+        for (ExcelSheetChunkDelta delta : existing) {
+            existingByCell.put(delta.getCellRow() + "_" + delta.getCellCol(), delta);
+        }
+
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+        for (Map<String, Object> update : updates) {
+            int r = Integer.parseInt(update.get("r").toString());
+            int c = Integer.parseInt(update.get("c").toString());
+            Object vObj = update.get("v");
+            JSONObject cellValue = null;
+            if (vObj != null) {
+                cellValue = JSONObject.parseObject(JSONObject.toJSONString(vObj));
+            }
+            String valueJson = (cellValue == null || cellValue.isEmpty()) ? "{}" : cellValue.toJSONString();
+            String key = r + "_" + c;
+            ExcelSheetChunkDelta delta = existingByCell.get(key);
+            if (delta == null) {
+                delta = new ExcelSheetChunkDelta();
+                delta.setDocumentId(documentId);
+                delta.setSheetId(sheetId);
+                delta.setChunkIndex(chunkIndex);
+                delta.setCellRow(r);
+                delta.setCellCol(c);
+                delta.setCellValue(valueJson);
+                delta.setUpdateTime(now);
+                deltaMapper.insert(delta);
+            } else {
+                delta.setCellValue(valueJson);
+                delta.setUpdateTime(now);
+                deltaMapper.updateById(delta);
+            }
+        }
+    }
+
+    private void maybeCompactSheetDeltas(Long sheetId) {
+        Long count = deltaMapper.selectCount(new QueryWrapper<ExcelSheetChunkDelta>()
+                .eq("sheet_id", sheetId));
+        if (count != null && count >= 500) {
+            compactSheetDeltas(sheetId);
+        }
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void compactSheetDeltas(Long sheetId) {
+        QueryWrapper<ExcelSheetChunkDelta> qw = new QueryWrapper<>();
+        qw.eq("sheet_id", sheetId);
+        List<ExcelSheetChunkDelta> deltas = deltaMapper.selectList(qw);
+        if (deltas.isEmpty()) {
+            return;
+        }
+        Map<Integer, List<ExcelSheetChunkDelta>> byChunk = new LinkedHashMap<>();
+        for (ExcelSheetChunkDelta delta : deltas) {
+            byChunk.computeIfAbsent(delta.getChunkIndex(), k -> new ArrayList<>()).add(delta);
+        }
+        for (ExcelSheetChunk chunk : listRawChunksBySheetId(sheetId)) {
+            List<ExcelSheetChunkDelta> chunkDeltas = byChunk.get(chunk.getChunkIndex());
+            if (chunkDeltas == null || chunkDeltas.isEmpty()) {
+                continue;
+            }
+            chunk.setCelldataJson(SheetChunkMerger.merge(chunk.getCelldataJson(), chunkDeltas).toJSONString());
+            chunkMapper.updateById(chunk);
+        }
+        deltaMapper.delete(qw);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public Map<Integer, Long> replaceWorkbook(Long documentId, List<Map<String, Object>> workbookSheets) {
+        if (workbookSheets == null || workbookSheets.isEmpty()) {
+            throw new BusinessException(ErrorCodes.EXCEL_PARSE_ERROR, "workbook sheets must not be empty");
+        }
+
+        QueryWrapper<ExcelSheetChunk> chunkQw = new QueryWrapper<>();
+        chunkQw.eq("document_id", documentId);
+        chunkMapper.delete(chunkQw);
+        QueryWrapper<ExcelSheetChunkDelta> deltaQw = new QueryWrapper<>();
+        deltaQw.eq("document_id", documentId);
+        deltaMapper.delete(deltaQw);
+
+        ExcelSheet deleted = new ExcelSheet();
+        deleted.setStatus(3);
+        QueryWrapper<ExcelSheet> sheetQw = new QueryWrapper<>();
+        sheetQw.eq("document_id", documentId);
+        sheetMapper.update(deleted, sheetQw);
+
+        List<String> sheetNames = new ArrayList<>();
+        int visibleIndex = 0;
+        Map<Integer, Long> sheetIdMapping = new LinkedHashMap<>();
+
+        for (Map<String, Object> rawSheet : workbookSheets) {
+            if (rawSheet == null) continue;
+
+            String name = stringValue(rawSheet.get("name"), "Sheet" + (visibleIndex + 1));
+            sheetNames.add(name);
+
+            JSONObject config = toJsonObject(rawSheet.get("config"));
+            JSONObject hyperlink = toJsonObject(rawSheet.get("hyperlink"));
+            if (hyperlink == null) hyperlink = new JSONObject();
+            JSONObject images = toJsonObject(rawSheet.get("images"));
+            if (images == null) images = new JSONObject();
+            JSONArray conditionFormat = toJsonArray(rawSheet.get("luckysheet_conditionformat_save"));
+            if (conditionFormat == null) conditionFormat = new JSONArray();
+            JSONArray chart = toJsonArray(rawSheet.get("chart"));
+            if (chart == null) chart = new JSONArray();
+
+            JSONObject merge = config.getJSONObject("merge");
+            JSONObject columnLen = config.getJSONObject("columnlen");
+            JSONObject rowLen = config.getJSONObject("rowlen");
+
+            if (merge == null) merge = new JSONObject();
+            if (columnLen == null) columnLen = new JSONObject();
+            if (rowLen == null) rowLen = new JSONObject();
+            config.put("merge", merge);
+            config.put("columnlen", columnLen);
+            config.put("rowlen", rowLen);
+
+            JSONArray celldata = resolveCelldata(rawSheet);
+            int totalRows = intValue(rawSheet.get("row"), calcTotalRows(rawSheet.get("data"), celldata));
+            int totalCols = intValue(rawSheet.get("column"), calcTotalCols(rawSheet.get("data"), celldata));
+
+            ExcelSheet sheet = new ExcelSheet();
+            sheet.setDocumentId(documentId);
+            sheet.setSheetIndex(visibleIndex);
+            sheet.setSheetName(name);
+            sheet.setTotalRows(Math.max(totalRows, 1));
+            sheet.setTotalCols(Math.max(totalCols, 1));
+            sheet.setChunkCount(0);
+            sheet.setMergeConfigJson(merge.toJSONString());
+            sheet.setColumnLenJson(columnLen.toJSONString());
+            sheet.setRowLenJson(rowLen.toJSONString());
+            sheet.setConfigJson(config.toJSONString());
+            sheet.setHyperlinkConfigJson(hyperlink.toJSONString());
+            sheet.setImagesConfigJson(images.toJSONString());
+            sheet.setConditionFormatJson(conditionFormat.toJSONString());
+            sheet.setChartJson(chart.toJSONString());
+            sheet.setActive(intValue(rawSheet.get("status"), visibleIndex == 0 ? 1 : 0));
+            sheet.setStatus(1);
+            sheetMapper.insert(sheet);
+
+            sheetIdMapping.put(visibleIndex, sheet.getId());
+
+            int chunkCount = saveCelldataChunks(documentId, sheet.getId(), celldata, sheet.getTotalRows());
+            ExcelSheet update = new ExcelSheet();
+            update.setId(sheet.getId());
+            update.setChunkCount(chunkCount);
+            sheetMapper.updateById(update);
+
+            visibleIndex++;
+        }
+
+        if (sheetNames.isEmpty()) {
+            throw new BusinessException(ErrorCodes.EXCEL_PARSE_ERROR, "workbook contains no valid sheets");
+        }
+
+        documentService.updateSheetMeta(documentId, sheetNames.size(), JSONArray.toJSONString(sheetNames));
+        return sheetIdMapping;
+    }
+
+    private int saveCelldataChunks(Long documentId, Long sheetId, JSONArray celldata, int totalRows) {
+        Map<Integer, JSONArray> chunks = new LinkedHashMap<>();
+        int chunkSize = ExcelParserService.CHUNK_SIZE;
+
+        for (int i = 0; i < celldata.size(); i++) {
+            JSONObject cell = celldata.getJSONObject(i);
+            int row = cell.getIntValue("r");
+            int chunkIndex = row / chunkSize;
+            chunks.computeIfAbsent(chunkIndex, key -> new JSONArray()).add(cell);
+        }
+
+        if (chunks.isEmpty()) {
+            return Math.max(1, (int) Math.ceil(Math.max(totalRows, 1) / (double) chunkSize));
+        }
+
+        for (Map.Entry<Integer, JSONArray> entry : chunks.entrySet()) {
+            int chunkIndex = entry.getKey();
+            ExcelSheetChunk chunk = new ExcelSheetChunk();
+            chunk.setDocumentId(documentId);
+            chunk.setSheetId(sheetId);
+            chunk.setChunkIndex(chunkIndex);
+            chunk.setRowStart(chunkIndex * chunkSize);
+            chunk.setRowEnd((chunkIndex + 1) * chunkSize - 1);
+            chunk.setCelldataJson(entry.getValue().toJSONString());
+            chunkMapper.insert(chunk);
+        }
+
+        return chunks.keySet().stream().max(Integer::compareTo).orElse(0) + 1;
+    }
+
+    private JSONArray resolveCelldata(Map<String, Object> rawSheet) {
+        Object celldataObj = rawSheet.get("celldata");
+        JSONArray celldata = toJsonArray(celldataObj);
+        if (!celldata.isEmpty()) return normalizeCelldata(celldata);
+        return dataMatrixToCelldata(rawSheet.get("data"));
+    }
+
+    private JSONArray normalizeCelldata(JSONArray celldata) {
+        JSONArray normalized = new JSONArray();
+        for (int i = 0; i < celldata.size(); i++) {
+            JSONObject cell = celldata.getJSONObject(i);
+            if (cell == null || !cell.containsKey("r") || !cell.containsKey("c")) continue;
+            Object value = cell.get("v");
+            if (isEmptyCellValue(value)) continue;
+            normalized.add(cell);
+        }
+        return normalized;
+    }
+
+    private JSONArray dataMatrixToCelldata(Object dataObj) {
+        JSONArray rows = toJsonArray(dataObj);
+        JSONArray celldata = new JSONArray();
+        for (int r = 0; r < rows.size(); r++) {
+            JSONArray row = toJsonArray(rows.get(r));
+            for (int c = 0; c < row.size(); c++) {
+                Object value = row.get(c);
+                if (isEmptyCellValue(value)) continue;
+                JSONObject cell = new JSONObject();
+                cell.put("r", r);
+                cell.put("c", c);
+                cell.put("v", toJsonObject(value));
+                celldata.add(cell);
+            }
+        }
+        return celldata;
+    }
+
+    private boolean isEmptyCellValue(Object value) {
+        if (value == null) return true;
+        if (value instanceof JSONObject) return ((JSONObject) value).isEmpty();
+        if (value instanceof Map) return ((Map<?, ?>) value).isEmpty();
+        return false;
+    }
+
+    private int calcTotalRows(Object dataObj, JSONArray celldata) {
+        JSONArray rows = toJsonArray(dataObj);
+        int max = rows.size();
+        for (int i = 0; i < celldata.size(); i++) {
+            max = Math.max(max, celldata.getJSONObject(i).getIntValue("r") + 1);
+        }
+        return max;
+    }
+
+    private int calcTotalCols(Object dataObj, JSONArray celldata) {
+        JSONArray rows = toJsonArray(dataObj);
+        int max = 0;
+        for (int r = 0; r < rows.size(); r++) {
+            max = Math.max(max, toJsonArray(rows.get(r)).size());
+        }
+        for (int i = 0; i < celldata.size(); i++) {
+            max = Math.max(max, celldata.getJSONObject(i).getIntValue("c") + 1);
+        }
+        return max;
+    }
+
+    private JSONObject toJsonObject(Object value) {
+        if (value == null) return new JSONObject();
+        if (value instanceof JSONObject) return (JSONObject) value;
+        return JSONObject.parseObject(JSONObject.toJSONString(value));
+    }
+
+    private JSONArray toJsonArray(Object value) {
+        if (value == null) return new JSONArray();
+        if (value instanceof JSONArray) return (JSONArray) value;
+        return JSONArray.parseArray(JSONArray.toJSONString(value));
+    }
+
+    private int intValue(Object value, int defaultValue) {
+        if (value == null) return defaultValue;
+        try { return Integer.parseInt(value.toString()); }
+        catch (Exception ignored) { return defaultValue; }
+    }
+
+    private String stringValue(Object value, String defaultValue) {
+        if (value == null) return defaultValue;
+        String text = value.toString();
+        return text.trim().isEmpty() ? defaultValue : text;
+    }
+}

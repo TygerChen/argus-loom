@@ -1,0 +1,239 @@
+package com.argus.rag.excel.audit;
+
+import com.argus.rag.excel.model.dto.CollabMessage;
+import com.argus.rag.excel.service.ExcelSheetService;
+import com.argus.rag.excel.mapper.OperationLogMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.*;
+
+/**
+ * 操作日志服务 — 记录变更 + 撤销重做。
+ *
+ * <p><b>一行日志 = 一次单元格变更的完整证据</b>：旧值 + 新值 + 谁 + 何时。
+ * 它同时支撑两件事：① 审计（运营中心回放"谁改的"）；② 撤销/重做
+ * （undo 就是用旧值覆盖回去，redo 反之——日志即历史）。
+ * 这和 ExcelSheetService 的 delta 是互补的两层：delta 管"最新事实"，
+ * operation_log 管"变更历史"，读写分离，互不拖累。</p>
+ */
+@Service
+public class OperationLogService {
+
+    private static final Logger log = LoggerFactory.getLogger(OperationLogService.class);
+    private final OperationLogMapper mapper;
+    private final ExcelSheetService sheetService;
+    private final ObjectMapper objectMapper;
+
+    public OperationLogService(OperationLogMapper mapper,
+                               ExcelSheetService sheetService,
+                               ObjectMapper objectMapper) {
+        this.mapper = mapper;
+        this.sheetService = sheetService;
+        this.objectMapper = objectMapper;
+    }
+
+    /**
+     * 记录单条单元格编辑。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public OperationLog recordCellEdit(CollabMessage msg, String oldValueJson) {
+        OperationLog entry = new OperationLog();
+        entry.setDocumentId(msg.documentId());
+        entry.setSheetId(msg.sheetId());
+        entry.setRowIndex(msg.r());
+        entry.setColIndex(msg.c());
+        entry.setOperationType("CELL_EDIT");
+        entry.setOldValue(oldValueJson);
+        entry.setNewValue(toJSON(msg.v()));
+        entry.setUserId(msg.userId());
+        entry.setUserDisplayName(msg.displayName());
+        mapper.insert(entry);
+        log.debug("操作日志已记录: doc={}, cell=({},{}), user={}", msg.documentId(), msg.r(), msg.c(), msg.userId());
+        return entry;
+    }
+
+    /**
+     * 记录批量编辑（粘贴等），所有单元格关联同一个 batchId。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public String recordBatchEdit(List<CollabMessage> msgs, Long userId, String displayName) {
+        String batchId = UUID.randomUUID().toString();
+        for (CollabMessage msg : msgs) {
+            OperationLog entry = new OperationLog();
+            entry.setDocumentId(msg.documentId());
+            entry.setSheetId(msg.sheetId());
+            entry.setRowIndex(msg.r());
+            entry.setColIndex(msg.c());
+            entry.setOperationType("BATCH_EDIT");
+            entry.setNewValue(toJSON(msg.v()));
+            entry.setUserId(userId);
+            entry.setUserDisplayName(displayName);
+            entry.setBatchId(batchId);
+            mapper.insert(entry);
+        }
+        log.info("批量操作日志已记录: batchId={}, count={}", batchId, msgs.size());
+        return batchId;
+    }
+
+    /**
+     * HTTP 批量编辑入口：先保存每个单元格的旧值到操作日志，再在同一事务里落增量数据。
+     * 这样撤销/重做不会丢失“编辑前”的状态。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public String recordBatchEditAndApply(Long documentId,
+                                          List<Map<String, Object>> updates,
+                                          Long userId,
+                                          String displayName) {
+        if (updates == null || updates.isEmpty()) {
+            return null;
+        }
+        String batchId = UUID.randomUUID().toString();
+        for (Map<String, Object> update : updates) {
+            Long sheetId = Long.parseLong(String.valueOf(update.get("sheetId")));
+            int r = Integer.parseInt(String.valueOf(update.get("r")));
+            int c = Integer.parseInt(String.valueOf(update.get("c")));
+            OperationLog entry = new OperationLog();
+            entry.setDocumentId(documentId);
+            entry.setSheetId(sheetId);
+            entry.setRowIndex(r);
+            entry.setColIndex(c);
+            entry.setOperationType("BATCH_EDIT");
+            entry.setOldValue(snapshotCellValue(documentId, sheetId, r, c));
+            entry.setNewValue(toJSON(update.get("v")));
+            entry.setUserId(userId);
+            entry.setUserDisplayName(displayName);
+            entry.setBatchId(batchId);
+            mapper.insert(entry);
+        }
+        sheetService.batchUpdateCells(documentId, updates);
+        log.info("批量编辑已记录并保存: doc={}, batchId={}, count={}",
+                documentId, batchId, updates.size());
+        return batchId;
+    }
+
+    private String snapshotCellValue(Long documentId, Long sheetId, int r, int c) {
+        try {
+            Map<String, Object> before = sheetService.loadCellSnapshot(documentId, sheetId, r, c);
+            return before == null ? "null" : toJSON(before.get("v"));
+        } catch (Exception e) {
+            log.warn("读取批量编辑前值失败: doc={}, cell=({},{}), error={}",
+                    documentId, r, c, e.getMessage());
+            return "null";
+        }
+    }
+
+    /**
+     * 按文档查询操作日志（最近 500 条，供前端展示）。
+     */
+    public List<OperationLog> getRecentLogs(Long documentId) {
+        var qw = new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<OperationLog>();
+        qw.eq("document_id", documentId)
+          .orderByDesc("id")
+          .last("limit 500");
+        return mapper.selectList(qw);
+    }
+
+    /** 撤销当前用户最近一次编辑（CELL_EDIT 或 BATCH_EDIT），并把旧值真正写回表格。 */
+    @Transactional(rollbackFor = Exception.class)
+    public OperationLog undoLast(Long documentId, Long userId) {
+        var qw = new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<OperationLog>();
+        qw.eq("document_id", documentId).eq("user_id", userId)
+          .in("operation_type", "CELL_EDIT", "BATCH_EDIT")
+          .orderByDesc("id").last("limit 1");
+        OperationLog latest = mapper.selectOne(qw);
+        if (latest == null) return null;
+
+        List<OperationLog> targets = new ArrayList<>();
+        if ("BATCH_EDIT".equals(latest.getOperationType()) && latest.getBatchId() != null) {
+            var batchQw = new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<OperationLog>();
+            batchQw.eq("batch_id", latest.getBatchId());
+            targets = mapper.selectList(batchQw);
+        } else {
+            targets.add(latest);
+        }
+
+        for (OperationLog target : targets) {
+            List<Map<String, Object>> updates = new ArrayList<>();
+            Map<String, Object> cellUpdate = new HashMap<>();
+            cellUpdate.put("sheetId", target.getSheetId());
+            cellUpdate.put("r", target.getRowIndex());
+            cellUpdate.put("c", target.getColIndex());
+            cellUpdate.put("v", parseValue(target.getOldValue()));
+            updates.add(cellUpdate);
+
+            OperationLog undoLog = new OperationLog();
+            undoLog.setDocumentId(target.getDocumentId());
+            undoLog.setSheetId(target.getSheetId());
+            undoLog.setRowIndex(target.getRowIndex());
+            undoLog.setColIndex(target.getColIndex());
+            undoLog.setOperationType("UNDO");
+            undoLog.setOldValue(target.getNewValue());
+            undoLog.setNewValue(target.getOldValue());
+            undoLog.setUserId(userId);
+            undoLog.setUserDisplayName(target.getUserDisplayName());
+            undoLog.setBatchId(target.getBatchId());
+            mapper.insert(undoLog);
+            sheetService.applyHistoryBatch(target.getDocumentId(), updates);
+        }
+        log.info("撤销完成: doc={}, rows={}", documentId, targets.size());
+        return latest;
+    }
+
+    /** 重做当前用户最近一次撤销。 */
+    @Transactional(rollbackFor = Exception.class)
+    public OperationLog redoLast(Long documentId, Long userId) {
+        var qw = new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<OperationLog>();
+        qw.eq("document_id", documentId).eq("user_id", userId)
+                .eq("operation_type", "UNDO")
+                .orderByDesc("id").last("limit 1");
+        OperationLog lastUndo = mapper.selectOne(qw);
+        if (lastUndo == null) return null;
+
+        List<Map<String, Object>> updates = new ArrayList<>();
+        Map<String, Object> cellUpdate = new HashMap<>();
+        cellUpdate.put("sheetId", lastUndo.getSheetId());
+        cellUpdate.put("r", lastUndo.getRowIndex());
+        cellUpdate.put("c", lastUndo.getColIndex());
+        // UNDO 行的 oldValue 就是撤销前的“当前值”，重做时把它写回去。
+        cellUpdate.put("v", parseValue(lastUndo.getOldValue()));
+        updates.add(cellUpdate);
+
+        OperationLog redoLog = new OperationLog();
+        redoLog.setDocumentId(lastUndo.getDocumentId());
+        redoLog.setSheetId(lastUndo.getSheetId());
+        redoLog.setRowIndex(lastUndo.getRowIndex());
+        redoLog.setColIndex(lastUndo.getColIndex());
+        redoLog.setOperationType("REDO");
+        redoLog.setOldValue(lastUndo.getNewValue());
+        redoLog.setNewValue(lastUndo.getOldValue());
+        redoLog.setUserId(userId);
+        redoLog.setUserDisplayName(lastUndo.getUserDisplayName());
+        mapper.insert(redoLog);
+        sheetService.applyHistoryBatch(documentId, updates);
+        return lastUndo;
+    }
+
+    private static final ObjectMapper PARSE_MAPPER = new ObjectMapper();
+
+    static Object parseValue(String json) {
+        if (json == null || json.isBlank() || "null".equals(json.trim())) return null;
+        try {
+            return PARSE_MAPPER.readValue(json, Object.class);
+        } catch (Exception e) {
+            return json;
+        }
+    }
+
+    private String toJSON(Object value) {
+        if (value == null) return "null";
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception e) {
+            return String.valueOf(value);
+        }
+    }
+}
