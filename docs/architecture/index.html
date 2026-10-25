@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Argus-Loom 架构图</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; background: #f0f2f5; color: #333; }
+  .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); color: white; padding: 30px 40px; }
+  .header h1 { font-size: 28px; margin-bottom: 8px; }
+  .header p { font-size: 14px; opacity: 0.7; }
+  .nav { display: flex; gap: 12px; padding: 20px 40px; flex-wrap: wrap; }
+  .nav button { padding: 12px 24px; border: 2px solid #6c8ebf; background: white; color: #333; cursor: pointer; border-radius: 8px; font-size: 14px; transition: all 0.3s; }
+  .nav button:hover { background: #dae8fc; }
+  .nav button.active { background: #6c8ebf; color: white; font-weight: bold; border-color: #6c8ebf; }
+  .container { margin: 0 40px 40px; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); overflow: hidden; min-height: 620px; position: relative; }
+  .loading { display: flex; align-items: center; justify-content: center; height: 620px; color: #999; font-size: 16px; }
+  .tips { margin: 0 40px 20px; padding: 16px 20px; background: #e8f4fd; border: 1px solid #6c8ebf; border-radius: 8px; font-size: 13px; color: #1a5276; line-height: 1.8; }
+  .tips strong { color: #1a3c5e; }
+  iframe { width: 100%; height: 780px; border: none; }
+  .footer { text-align: center; padding: 20px; color: #999; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Argus-Loom 架构图</h1>
+  <p>系统架构可视化文档 | Draw.io 格式 | 5 个流程/架构图</p>
+</div>
+<div class="tips">
+  <strong>使用提示：</strong>直接双击打开即可查看。图表通过 Draw.io Viewer 在线渲染，需要网络连接。如需离线查看，请用 <a href="https://github.com/jgraph/drawio-desktop/releases" target="_blank" style="color:#6c8ebf">Draw.io 桌面版</a> 打开 .drawio 文件。
+</div>
+<div class="nav" id="nav">
+  <button class="active" onclick="show(0)">系统总体架构</button>
+  <button onclick="show(1)">RAG 问答流程</button>
+  <button onclick="show(2)">文档摄取流水线</button>
+  <button onclick="show(3)">Excel 协同编辑</button>
+  <button onclick="show(4)">AI 助手对话流程</button>
+</div>
+<div class="container" id="container">
+  <div class="loading" id="loadingMsg">加载 Draw.io Viewer...</div>
+</div>
+<div class="footer">Argus-Loom 架构图 | Draw.io Viewer | Powered by diagrams.net</div>
+<script>
+var diagrams = [
+  {name: '系统总体架构', file: 'system-overview.drawio'},
+  {name: 'RAG 问答流程', file: 'rag-qa-flow.drawio'},
+  {name: '文档摄取流水线', file: 'document-ingestion-flow.drawio'},
+  {name: 'Excel 协同编辑', file: 'excel-collab-arch.drawio'},
+  {name: 'AI 助手对话流程', file: 'assistant-chat-flow.drawio'}
+];
+var xmlCache = {};
+var currentIdx = -1;
+var viewerReady = false;
+var viewerUrl = 'https://viewer.diagrams.net/?embed=1&editable=0&spin=1&proto=graph&fit=1&layers=1&nav=1&highlight=0000ff&zoom=1';
+
+function loadXml(idx, callback) {
+  if (xmlCache[idx]) { callback(xmlCache[idx]); return; }
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', diagrams[idx].file, true);
+  xhr.onload = function() {
+    if (xhr.status === 200 || xhr.status === 0) {
+      xmlCache[idx] = xhr.responseText;
+      callback(xhr.responseText);
+    } else {
+      callback(null);
+    }
+  };
+  xhr.onerror = function() { callback(null); };
+  try { xhr.send(); } catch(e) { callback(null); }
+}
+
+function showError(msg) {
+  document.getElementById('container').innerHTML =
+    '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:620px;color:#e74c3c;font-size:16px;text-align:center;padding:40px;line-height:2">' +
+    '<h2 style="margin-bottom:16px;color:#333">无法加载图表</h2>' +
+    '<p>' + (msg || '请确认 .drawio 文件与此 HTML 在同一目录，且通过 HTTP 服务打开。') + '</p>' +
+    '<p style="margin-top:12px">启动方式：</p>' +
+    '<code style="background:#f5f5f5;padding:6px 14px;border-radius:4px;font-size:13px;color:#333">python -m http.server 8080</code><br>' +
+    '<code style="background:#f5f5f5;padding:6px 14px;border-radius:4px;font-size:13px;color:#333">npx serve .</code><br>' +
+    '<p style="margin-top:12px">然后访问 <code style="background:#f5f5f5;padding:4px 10px;border-radius:4px;font-size:13px;color:#333">http://localhost:8080/index.html</code></p>' +
+    '</div>';
+}
+
+function show(idx) {
+  currentIdx = idx;
+  var buttons = document.querySelectorAll('.nav button');
+  for (var i = 0; i < buttons.length; i++) {
+    buttons[i].classList.toggle('active', i === idx);
+  }
+  if (!viewerReady) return;
+  loadXml(idx, function(xml) {
+    if (!xml) { showError('文件加载失败: ' + diagrams[idx].file); return; }
+    var iframe = document.getElementById('viewer');
+    if (iframe && iframe.contentWindow) {
+      iframe.contentWindow.postMessage({action: 'load', xml: xml, autosave: 0}, '*');
+    }
+  });
+}
+
+window.addEventListener('message', function(evt) {
+  if (evt.data && evt.data.event === 'init') {
+    viewerReady = true;
+    show(0);
+  }
+});
+
+window.addEventListener('DOMContentLoaded', function() {
+  var container = document.getElementById('container');
+  container.innerHTML = '<iframe id="viewer" src="' + viewerUrl + '" style="width:100%;height:780px;border:none"></iframe>';
+  var iframe = document.getElementById('viewer');
+  iframe.onload = function() {
+    setTimeout(function() {
+      if (!viewerReady) {
+        viewerReady = true;
+        show(0);
+      }
+    }, 3000);
+  };
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,427 @@
+package com.argus.rag.excel.service;
+
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
+import com.argus.rag.common.exception.BusinessException;
+import com.argus.rag.excel.entity.ExcelDocument;
+import com.argus.rag.excel.entity.ExcelSheet;
+import com.argus.rag.excel.entity.ExcelSheetChunk;
+import com.argus.rag.excel.mapper.ExcelSheetChunkMapper;
+import com.argus.rag.excel.mapper.ExcelSheetMapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.text.SimpleDateFormat;
+import java.util.*;
+
+/**
+ * Excel 解析引擎 — 流式 POI 解析 + 分块持久化
+ */
+@Service
+public class ExcelParserService {
+
+    private static final Logger log = LoggerFactory.getLogger(ExcelParserService.class);
+
+    public static final int CHUNK_SIZE = 1000;
+
+    private final ExcelSheetMapper sheetMapper;
+    private final ExcelSheetChunkMapper chunkMapper;
+
+    public ExcelParserService(ExcelSheetMapper sheetMapper, ExcelSheetChunkMapper chunkMapper) {
+        this.sheetMapper = sheetMapper;
+        this.chunkMapper = chunkMapper;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public List<ExcelSheet> parseAndSave(InputStream is, ExcelDocument document) throws Exception {
+        List<ExcelSheet> savedSheets = new ArrayList<>();
+
+        org.apache.poi.openxml4j.util.ZipSecureFile.setMinInflateRatio(0.001);
+        Workbook workbook = WorkbookFactory.create(is);
+
+        int sheetTotal = workbook.getNumberOfSheets();
+        log.info("开始解析文档 [{}], 共 {} 个 Sheet", document.getName(), sheetTotal);
+
+        for (int si = 0; si < sheetTotal; si++) {
+            org.apache.poi.ss.usermodel.Sheet sheet = workbook.getSheetAt(si);
+            log.info("  → 解析 Sheet[{}]: {}", si, sheet.getSheetName());
+
+            ExcelSheet sheetEntity = saveSheetMeta(sheet, document, si);
+            savedSheets.add(sheetEntity);
+            saveSheetChunks(sheet, workbook, sheetEntity);
+        }
+        workbook.close();
+
+        log.info("文档 [{}] 解析完成，共 {} 个 Sheet", document.getName(), savedSheets.size());
+        return savedSheets;
+    }
+
+    private ExcelSheet saveSheetMeta(org.apache.poi.ss.usermodel.Sheet sheet,
+                                      ExcelDocument document, int sheetIndex) {
+        ExcelSheet sheetEntity = new ExcelSheet();
+        sheetEntity.setDocumentId(document.getId());
+        sheetEntity.setSheetIndex(sheetIndex);
+        sheetEntity.setSheetName(sheet.getSheetName());
+        sheetEntity.setActive(sheetIndex == 0 ? 1 : 0);
+        sheetEntity.setStatus(1);
+
+        int maxRow = sheet.getLastRowNum();
+        int maxCol = calcMaxCol(sheet);
+        sheetEntity.setTotalRows(maxRow + 1);
+        sheetEntity.setTotalCols(maxCol);
+
+        JSONObject mergeConfig = buildMergeConfig(sheet);
+        sheetEntity.setMergeConfigJson(mergeConfig.toJSONString());
+
+        JSONObject columnLen = buildColumnLen(sheet, maxCol);
+        sheetEntity.setColumnLenJson(columnLen.toJSONString());
+
+        JSONObject rowLen = buildRowLen(sheet);
+        sheetEntity.setRowLenJson(rowLen.toJSONString());
+
+        JSONObject config = new JSONObject();
+        config.put("merge", mergeConfig);
+        config.put("columnlen", columnLen);
+        config.put("rowlen", rowLen);
+        sheetEntity.setConfigJson(config.toJSONString());
+
+        sheetEntity.setChunkCount(0);
+        sheetMapper.insert(sheetEntity);
+        log.info("    Sheet 元信息已保存: id={}, rows={}, cols={}", sheetEntity.getId(), maxRow + 1, maxCol);
+        return sheetEntity;
+    }
+
+    private void saveSheetChunks(org.apache.poi.ss.usermodel.Sheet sheet,
+                                  org.apache.poi.ss.usermodel.Workbook workbook,
+                                  ExcelSheet sheetEntity) {
+        org.apache.poi.ss.usermodel.FormulaEvaluator evaluator =
+                workbook.getCreationHelper().createFormulaEvaluator();
+        int lastRowNum = sheet.getLastRowNum();
+
+        List<JSONObject> buffer = new ArrayList<>(CHUNK_SIZE * 10);
+        int chunkIndex = 0;
+        int chunkStartRow = 0;
+        int chunkEndRow = 0;
+
+        for (int rowIdx = 0; rowIdx <= lastRowNum; rowIdx++) {
+            org.apache.poi.ss.usermodel.Row row = sheet.getRow(rowIdx);
+            if (row == null) continue;
+
+            for (org.apache.poi.ss.usermodel.Cell cell : row) {
+                JSONObject vObj = buildCellValue(cell, evaluator);
+                if (vObj != null) {
+                    JSONObject cellItem = new JSONObject();
+                    cellItem.put("r", cell.getRowIndex());
+                    cellItem.put("c", cell.getColumnIndex());
+                    cellItem.put("v", vObj);
+                    buffer.add(cellItem);
+                }
+            }
+
+            chunkEndRow = rowIdx;
+
+            boolean isChunkFull = (rowIdx - chunkStartRow + 1) >= CHUNK_SIZE;
+            boolean isLastRow = (rowIdx == lastRowNum);
+
+            if ((isChunkFull || isLastRow) && !buffer.isEmpty()) {
+                ExcelSheetChunk chunk = new ExcelSheetChunk();
+                chunk.setDocumentId(sheetEntity.getDocumentId());
+                chunk.setSheetId(sheetEntity.getId());
+                chunk.setChunkIndex(chunkIndex);
+                chunk.setRowStart(chunkStartRow);
+                chunk.setRowEnd(chunkEndRow);
+                chunk.setCelldataJson(JSONArray.toJSONString(buffer));
+                chunkMapper.insert(chunk);
+
+                log.debug("    Chunk[{}] 已写入: rows {}-{}, cellCount={}", chunkIndex, chunkStartRow, chunkEndRow, buffer.size());
+
+                buffer.clear();
+                chunkIndex++;
+                chunkStartRow = rowIdx + 1;
+            } else if (isChunkFull) {
+                chunkStartRow = rowIdx + 1;
+            }
+        }
+
+        ExcelSheet update = new ExcelSheet();
+        update.setId(sheetEntity.getId());
+        update.setChunkCount(chunkIndex);
+        sheetMapper.updateById(update);
+        sheetEntity.setChunkCount(chunkIndex);
+
+        log.info("    Sheet [{}] 分块完成，共 {} 块", sheetEntity.getSheetName(), chunkIndex);
+    }
+
+    private JSONObject buildCellValue(org.apache.poi.ss.usermodel.Cell cell,
+                                       org.apache.poi.ss.usermodel.FormulaEvaluator evaluator) {
+        JSONObject v = new JSONObject();
+        JSONObject ct = new JSONObject();
+
+        try {
+            switch (cell.getCellType()) {
+                case STRING: {
+                    String val = cell.getStringCellValue();
+                    if (val == null || val.isEmpty()) return null;
+                    v.put("v", val);
+                    v.put("m", val);
+                    ct.put("fa", "General");
+                    ct.put("t", "s");
+                    break;
+                }
+                case NUMERIC: {
+                    if (org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell)) {
+                        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+                        String dateStr = sdf.format(cell.getDateCellValue());
+                        v.put("v", dateStr);
+                        v.put("m", dateStr);
+                        ct.put("fa", "yyyy-MM-dd");
+                        ct.put("t", "d");
+                    } else {
+                        double num = cell.getNumericCellValue();
+                        v.put("v", num);
+                        v.put("m", formatNum(num));
+                        ct.put("fa", "General");
+                        ct.put("t", "n");
+                    }
+                    break;
+                }
+                case BOOLEAN: {
+                    boolean b = cell.getBooleanCellValue();
+                    v.put("v", b);
+                    v.put("m", b ? "TRUE" : "FALSE");
+                    ct.put("fa", "General");
+                    ct.put("t", "b");
+                    break;
+                }
+                case FORMULA: {
+                    try {
+                        org.apache.poi.ss.usermodel.CellValue cv = evaluator.evaluate(cell);
+                        v.put("f", "=" + cell.getCellFormula());
+                        if (cv != null && cv.getCellType() == org.apache.poi.ss.usermodel.CellType.NUMERIC) {
+                            v.put("v", cv.getNumberValue());
+                            v.put("m", formatNum(cv.getNumberValue()));
+                        } else {
+                            String sv = cv != null ? cv.getStringValue() : "";
+                            v.put("v", sv);
+                            v.put("m", sv);
+                        }
+                        ct.put("fa", "General");
+                        ct.put("t", "n");
+                    } catch (Exception fe) {
+                        String raw = cell.getCellFormula();
+                        v.put("v", "=" + raw);
+                        v.put("m", "=" + raw);
+                        ct.put("fa", "General");
+                        ct.put("t", "s");
+                    }
+                    break;
+                }
+                case BLANK:
+                default:
+                    return null;
+            }
+        } catch (Exception e) {
+            return null;
+        }
+
+        v.put("ct", ct);
+        return v;
+    }
+
+    private int calcMaxCol(org.apache.poi.ss.usermodel.Sheet sheet) {
+        int max = 0;
+        for (org.apache.poi.ss.usermodel.Row row : sheet) {
+            if (row.getLastCellNum() > max) {
+                max = row.getLastCellNum();
+            }
+        }
+        return max;
+    }
+
+    private JSONObject buildMergeConfig(org.apache.poi.ss.usermodel.Sheet sheet) {
+        JSONObject mergeConfig = new JSONObject();
+        for (org.apache.poi.ss.util.CellRangeAddress range : sheet.getMergedRegions()) {
+            String key = range.getFirstRow() + "_" + range.getFirstColumn();
+            JSONObject item = new JSONObject();
+            item.put("r", range.getFirstRow());
+            item.put("c", range.getFirstColumn());
+            item.put("rs", range.getLastRow() - range.getFirstRow() + 1);
+            item.put("cs", range.getLastColumn() - range.getFirstColumn() + 1);
+            mergeConfig.put(key, item);
+        }
+        return mergeConfig;
+    }
+
+    private JSONObject buildColumnLen(org.apache.poi.ss.usermodel.Sheet sheet, int maxCol) {
+        JSONObject colWidths = new JSONObject();
+        try {
+            for (int ci = 0; ci < maxCol; ci++) {
+                double width = sheet.getColumnWidthInPixels(ci);
+                colWidths.put(String.valueOf(ci), (int) Math.max(width, 72));
+            }
+        } catch (Exception ignored) {
+            // ignore
+        }
+        return colWidths;
+    }
+
+    private JSONObject buildRowLen(org.apache.poi.ss.usermodel.Sheet sheet) {
+        JSONObject rowHeights = new JSONObject();
+        for (org.apache.poi.ss.usermodel.Row row : sheet) {
+            if (row == null) continue;
+            float height = row.getHeightInPoints();
+            if (height > 0) {
+                rowHeights.put(String.valueOf(row.getRowNum()), Math.round(height / 0.75f));
+            }
+        }
+        return rowHeights;
+    }
+
+    private String formatNum(double num) {
+        if (num == (long) num) return String.valueOf((long) num);
+        return String.valueOf(num);
+    }
+
+    /**
+     * 用磁盘上的原始 Excel 文件回填数字格式。
+     * 只修正存储值与原文件一致的数值单元格，已编辑/删除的单元格不会被覆盖。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public int repairNumberFormats(ExcelDocument document) throws Exception {
+        if (document == null || document.getId() == null || document.getFilePath() == null) {
+            return 0;
+        }
+        Path source = Path.of(document.getFilePath());
+        if (!Files.exists(source)) {
+            throw new IOException("原始文件不存在: " + source);
+        }
+
+        QueryWrapper<ExcelSheet> sheetQuery = new QueryWrapper<>();
+        sheetQuery.eq("document_id", document.getId()).eq("status", 1).orderByAsc("sheet_index");
+        List<ExcelSheet> sheets = sheetMapper.selectList(sheetQuery);
+        if (sheets.isEmpty()) {
+            return 0;
+        }
+
+        int repaired = 0;
+        try (InputStream in = Files.newInputStream(source);
+             Workbook workbook = WorkbookFactory.create(in)) {
+            org.apache.poi.ss.usermodel.FormulaEvaluator evaluator =
+                    workbook.getCreationHelper().createFormulaEvaluator();
+            for (ExcelSheet sheetMeta : sheets) {
+                int sheetIndex = sheetMeta.getSheetIndex() == null ? -1 : sheetMeta.getSheetIndex();
+                if (sheetIndex < 0 || sheetIndex >= workbook.getNumberOfSheets()) {
+                    continue;
+                }
+                org.apache.poi.ss.usermodel.Sheet sourceSheet = workbook.getSheetAt(sheetIndex);
+                QueryWrapper<ExcelSheetChunk> chunkQuery = new QueryWrapper<>();
+                chunkQuery.eq("sheet_id", sheetMeta.getId()).orderByAsc("chunk_index");
+
+                for (ExcelSheetChunk chunk : chunkMapper.selectList(chunkQuery)) {
+                    if (chunk.getCelldataJson() == null || chunk.getCelldataJson().trim().isEmpty()) {
+                        continue;
+                    }
+                    JSONArray cells = JSONArray.parseArray(chunk.getCelldataJson());
+                    if (cells == null || cells.isEmpty()) {
+                        continue;
+                    }
+                    Map<String, JSONObject> cellIndex = new HashMap<>();
+                    for (int i = 0; i < cells.size(); i++) {
+                        JSONObject node = cells.getJSONObject(i);
+                        if (node == null || !node.containsKey("r") || !node.containsKey("c")) {
+                            continue;
+                        }
+                        cellIndex.put(node.getIntValue("r") + "_" + node.getIntValue("c"), node);
+                    }
+
+                    int startRow = chunk.getRowStart() == null ? 0 : chunk.getRowStart();
+                    int endRow = chunk.getRowEnd() == null ? sourceSheet.getLastRowNum() : chunk.getRowEnd();
+                    int repairedInChunk = 0;
+                    for (int r = startRow; r <= Math.min(endRow, sourceSheet.getLastRowNum()); r++) {
+                        org.apache.poi.ss.usermodel.Row row = sourceSheet.getRow(r);
+                        if (row == null) {
+                            continue;
+                        }
+                        for (org.apache.poi.ss.usermodel.Cell cell : row) {
+                            JSONObject stored = cellIndex.get(row.getRowNum() + "_" + cell.getColumnIndex());
+                            if (stored == null) {
+                                continue;
+                            }
+                            JSONObject parsed = buildCellValue(cell, evaluator);
+                            if (parsed != null && patchNumberFormat(stored, parsed)) {
+                                repairedInChunk++;
+                            }
+                        }
+                    }
+                    if (repairedInChunk > 0) {
+                        chunk.setCelldataJson(cells.toJSONString());
+                        chunkMapper.updateById(chunk);
+                        repaired += repairedInChunk;
+                    }
+                }
+            }
+        }
+        log.info("文档 [{}] 数字格式修复完成，共回填 {} 个单元格", document.getName(), repaired);
+        return repaired;
+    }
+
+    /** 仅当库里值未被用户改过且类型仍是数字时，覆盖原文件格式。 */
+    private boolean patchNumberFormat(JSONObject stored, JSONObject parsed) {
+        Object storedValueObj = stored == null ? null : stored.get("v");
+        Object parsedValueObj = parsed == null ? null : parsed.get("v");
+        if (!(storedValueObj instanceof JSONObject) || !(parsedValueObj instanceof JSONObject)) {
+            return false;
+        }
+        JSONObject storedValue = (JSONObject) storedValueObj;
+        JSONObject parsedValue = (JSONObject) parsedValueObj;
+        JSONObject storedCt = jsonObjectOrNull(storedValue.get("ct"));
+        if (storedCt == null || !"n".equals(storedCt.getString("t"))) {
+            return false;
+        }
+        Object storedRaw = storedValue.get("v");
+        Object parsedRaw = parsedValue.get("v");
+        if (!(storedRaw instanceof Number) || !(parsedRaw instanceof Number)) {
+            return false;
+        }
+        if (storedValue.containsKey("f") != parsedValue.containsKey("f")) {
+            return false;
+        }
+        if (storedValue.containsKey("f")) {
+            if (!String.valueOf(storedValue.get("f")).equals(String.valueOf(parsedValue.get("f")))) {
+                return false;
+            }
+        } else if (Double.compare(((Number) storedRaw).doubleValue(),
+                ((Number) parsedRaw).doubleValue()) != 0) {
+            return false;
+        }
+        JSONObject parsedCt = jsonObjectOrNull(parsedValue.get("ct"));
+        String parsedFa = parsedCt == null ? "General" : parsedCt.getString("fa");
+        String parsedM = parsedValue.getString("m");
+        if (parsedFa == null) parsedFa = "General";
+        if (parsedM == null) parsedM = "";
+        if (parsedFa.equals(storedCt.getString("fa"))
+                && parsedM.equals(storedValue.getString("m"))) {
+            return false;
+        }
+        JSONObject targetCt = parsedCt == null ? new JSONObject() : parsedCt;
+        targetCt.put("t", "n");
+        storedValue.put("ct", targetCt);
+        storedValue.put("m", parsedM);
+        return true;
+    }
+
+    private JSONObject jsonObjectOrNull(Object value) {
+        return value instanceof JSONObject ? (JSONObject) value : null;
+    }
+}

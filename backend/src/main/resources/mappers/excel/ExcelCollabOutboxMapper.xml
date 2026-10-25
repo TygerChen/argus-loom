@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.argus.rag.excel.mapper.ExcelCollabOutboxMapper">
+
+    <!-- 只按 FIFO 取待发送事件；单条发送失败由服务层 try-catch 兜住，不影响同批其他事件。 -->
+    <select id="selectPending" resultType="com.argus.rag.excel.entity.ExcelCollabOutbox">
+        SELECT id, document_id, event_type, payload_json, status, created_at
+        FROM excel_collab_outbox
+        WHERE status = 'PENDING'
+        ORDER BY id ASC
+        LIMIT #{limit}
+    </select>
+</mapper>

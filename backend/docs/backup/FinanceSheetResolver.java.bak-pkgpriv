@@ -1,0 +1,178 @@
+package com.argus.rag.excel.finance;
+
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.DataFormatter;
+import org.apache.poi.ss.usermodel.DateUtil;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.springframework.stereotype.Component;
+
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
+
+/**
+ * 根据数据字典中的标准字段自动定位一个 Sheet 的表头行和列映射。
+ */
+@Component
+public class FinanceSheetResolver {
+
+    private static final int HEADER_SCAN_LIMIT = 7;
+    private static final DataFormatter DATA_FORMATTER = new DataFormatter(Locale.CHINA);
+    private static final String[] DATE_PATTERNS = {
+            "yyyy-MM-dd", "yyyy/M/d", "yyyy年M月d日", "yyyy-MM"
+    };
+
+    /**
+     * 识别一个 Sheet：先在前 7 行找“标准表头”，再逐列翻译成 FinanceColumn 映射，
+     * 顺带从顶部区域探测报表日期。
+     */
+    public SheetMapping resolve(Sheet sheet) {
+        int headerRow = findHeaderRow(sheet);
+        if (headerRow < 0) {
+            return null;
+        }
+        SheetMapping mapping = new SheetMapping(sheet.getSheetName(), headerRow);
+        Row header = sheet.getRow(headerRow);
+        if (header != null) {
+            short last = header.getLastCellNum();
+            for (short col = 0; col < last; col++) {
+                Cell cell = header.getCell(col);
+                FinanceColumn column = FinanceColumn.fromHeader(cellText(cell));
+                if (column != null) {
+                    mapping.put(column, col);
+                }
+            }
+        }
+        if (mapping.getColumnMap().isEmpty()) {
+            return null;
+        }
+        mapping.setReportDate(detectReportDate(sheet));
+        applyDateColumnHeuristic(sheet, mapping);
+        return mapping;
+    }
+
+    /** 在前几行里找命中标准字段最多的行，当作表头行 */
+    private int findHeaderRow(Sheet sheet) {
+        int lastRow = Math.min(sheet.getLastRowNum(), HEADER_SCAN_LIMIT);
+        Row bestRow = null;
+        int bestMatches = 0;
+        for (int rowIndex = 0; rowIndex <= lastRow; rowIndex++) {
+            Row row = sheet.getRow(rowIndex);
+            if (row == null) {
+                continue;
+            }
+            int matches = 0;
+            for (Cell cell : row) {
+                if (FinanceColumn.fromHeader(cellText(cell)) != null) {
+                    matches++;
+                }
+            }
+            if (matches >= 2 && matches > bestMatches) {
+                bestMatches = matches;
+                bestRow = row;
+            }
+        }
+        return bestRow == null ? -1 : bestRow.getRowNum();
+    }
+
+    /** 在 Sheet 前 8 行里探测“报表日期”，用于没有逐行日期时的兜底 */
+    private LocalDate detectReportDate(Sheet sheet) {
+        int end = Math.min(sheet.getLastRowNum(), 7);
+        for (int rowIndex = 0; rowIndex <= end; rowIndex++) {
+            Row row = sheet.getRow(rowIndex);
+            if (row == null) {
+                continue;
+            }
+            for (Cell cell : row) {
+                LocalDate date = null;
+                if (cell.getCellType() == CellType.NUMERIC) {
+                    if (DateUtil.isCellDateFormatted(cell)) {
+                        date = cell.getDateCellValue().toInstant()
+                                .atZone(ZoneId.systemDefault()).toLocalDate();
+                    } else {
+                        double value = cell.getNumericCellValue();
+                        if (value > 30000 && value < 100000) {
+                            date = DateUtil.getJavaDate(value).toInstant()
+                                    .atZone(ZoneId.systemDefault()).toLocalDate();
+                        }
+                    }
+                } else {
+                    date = parseDateText(cellText(cell));
+                }
+                if (date != null && date.getYear() > 2000 && date.getYear() < 2100) {
+                    return date;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 表头里没识别日期列时，看数据前几行的第一列是不是日期，是就自动映射 */
+    private void applyDateColumnHeuristic(Sheet sheet, SheetMapping mapping) {
+        if (mapping.has(FinanceColumn.TRANSACTION_DATE)
+                || mapping.has(FinanceColumn.ROW_NO)
+                || mapping.has(FinanceColumn.RATE_MONTH)) {
+            return;
+        }
+        int start = mapping.getDataStartRow();
+        int end = Math.min(sheet.getLastRowNum(), start + 4);
+        for (int rowIndex = start; rowIndex <= end; rowIndex++) {
+            Row row = sheet.getRow(rowIndex);
+            if (row == null) {
+                continue;
+            }
+            Cell first = row.getCell(0);
+            if (first != null && isDateCell(first)) {
+                mapping.put(FinanceColumn.TRANSACTION_DATE, 0);
+                mapping.addWarning("第1列无表头，按日期列自动识别");
+                return;
+            }
+        }
+    }
+
+    private boolean isDateCell(Cell cell) {
+        if (cell.getCellType() == CellType.NUMERIC) {
+            if (DateUtil.isCellDateFormatted(cell)) {
+                return true;
+            }
+            double value = cell.getNumericCellValue();
+            return value > 30000 && value < 100000;
+        }
+        return parseDateText(cellText(cell)) != null;
+    }
+
+    private LocalDate parseDateText(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        String normalized = text.trim();
+        if (normalized.length() == 8 && normalized.chars().allMatch(Character::isDigit)) {
+            try {
+                return LocalDate.of(
+                        Integer.parseInt(normalized.substring(0, 4)),
+                        Integer.parseInt(normalized.substring(4, 6)),
+                        Integer.parseInt(normalized.substring(6, 8)));
+            } catch (Exception ignored) {
+                return null;
+            }
+        }
+        for (String pattern : DATE_PATTERNS) {
+            try {
+                return LocalDate.parse(normalized, DateTimeFormatter.ofPattern(pattern));
+            } catch (Exception ignored) {
+                // keep trying
+            }
+        }
+        return null;
+    }
+
+    private String cellText(Cell cell) {
+        if (cell == null) {
+            return "";
+        }
+        return DATA_FORMATTER.formatCellValue(cell);
+    }
+}

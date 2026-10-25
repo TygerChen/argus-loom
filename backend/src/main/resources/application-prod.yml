@@ -1,0 +1,100 @@
+spring:
+  application:
+    name: argus-service
+  http:
+    client:
+      factory: simple
+  datasource:
+    url: ${DB_URL}
+    username: ${POSTGRES_USERNAME}
+    password: ${POSTGRES_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+  ai:
+    model:
+      chat: openai
+      # embedding 由本地进程内 bge-small-zh(512 维)承载，见 LocalEmbeddingConfig；不再依赖远端 OpenAI embedding。
+      embedding: local
+    openai:
+      api-key: ${OPENAI_API_KEY}
+      base-url: ${OPENAI_BASE_URL:https://api.agnes-ai.cn}
+      chat:
+        options:
+          model: ${LLM_CHAT_MODEL:agnes-3.0-flash}
+    vectorstore:
+      pgvector:
+        dimensions: 512
+        index-type: hnsw
+        distance-type: cosine_distance
+
+server:
+  port: ${SERVER_PORT:8080}
+  forward-headers-strategy: framework
+
+storage:
+  minio:
+    endpoint: ${MINIO_ENDPOINT}
+    access-key: ${MINIO_ACCESS_KEY}
+    secret-key: ${MINIO_SECRET_KEY}
+    bucket: ${MINIO_BUCKET:argus-rag-documents}
+
+argus:
+  rag:
+    qa:
+      model-name: ${LLM_CHAT_MODEL:agnes-3.0-flash}
+    auth:
+      jwt-secret: ${ARGUS_RAG_JWT_SECRET}
+      issuer: argus-rag
+      access-token-expire-minutes: 30
+      refresh-token-expire-days: 14
+      refresh-cookie-name: ARGUS_RAG_REFRESH_TOKEN
+      refresh-cookie-secure: true
+    # P1-07：此前 excel/llm 挂在根层级（代码读的是 argus.rag.*，永不生效），统一归位
+    llm:
+      timeout-seconds: ${LLM_TIMEOUT_SECONDS:45}
+      max-retries: 3
+      retry-initial-delay-ms: 1000
+      retry-multiplier: 2
+      retry-max-delay-ms: 8000
+    excel:
+      upload-path: ${ARGUS_EXCEL_UPLOAD_PATH:/opt/data/argus/upload}
+    # 生产必须显式提供站点来源（ARGUS_WS_ALLOWED_ORIGINS），不做 "*" 兜底
+    websocket:
+      allowed-origin-patterns: ${ARGUS_WS_ALLOWED_ORIGINS:https://localhost:8081}
+
+elasticsearch:
+  host: ${ES_HOST}
+  port: ${ES_PORT:9200}
+  scheme: ${ES_SCHEME:http}
+  index-name: argus_rag_document_chunks
+
+ingestion:
+    # 启动回收遗留 PROCESSING 文档的时间窗（分钟）：多实例下不误杀活实例在途文档
+  stale-processing-threshold-minutes: 10
+  chunking:
+    target-tokens: 240
+    max-tokens: 320
+    overlap-tokens: 32
+    chars-per-token: 2
+  vector:
+    add-batch-size: 9
+
+youcom:
+  search:
+    enabled: ${YOUCOM_SEARCH_ENABLED:false}
+    api-key: ${YOUCOM_API_KEY:}
+    top-k: 10
+
+# 生产环境网页搜索默认关闭；如需开启必须显式设置 WEB_SEARCH_ENABLED=true，
+# 且目标地址受 SafeRemoteUrlPolicy 公网白名单约束。
+web-search:
+  enabled: ${WEB_SEARCH_ENABLED:false}
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true

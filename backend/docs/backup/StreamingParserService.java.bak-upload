@@ -1,0 +1,240 @@
+package com.argus.rag.excel.service;
+
+import com.argus.rag.common.util.DateFormats;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
+import org.apache.poi.openxml4j.opc.OPCPackage;
+import org.apache.poi.ss.usermodel.DateUtil;
+import org.apache.poi.xssf.eventusermodel.XSSFReader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.xml.sax.Attributes;
+import org.xml.sax.InputSource;
+import org.xml.sax.SAXException;
+import org.xml.sax.helpers.DefaultHandler;
+
+import javax.xml.parsers.SAXParserFactory;
+import java.io.InputStream;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+
+/**
+ * 大文件流式解析服务 — XSSFReader + SAX，内存恒定，支持合并单元格和格式化。
+ * 输出与 ExcelParserService 完全兼容的 celldata JSON 格式。
+ */
+@Service
+public class StreamingParserService {
+
+    private static final Logger log = LoggerFactory.getLogger(StreamingParserService.class);
+    private static final DateTimeFormatter DATE_FMT = DateFormats.DATE;
+
+    public Map<Integer, ParsedSheet> parseStreaming(InputStream inputStream) throws Exception {
+        Map<Integer, ParsedSheet> result = new LinkedHashMap<>();
+
+        OPCPackage pkg = OPCPackage.open(inputStream);
+        XSSFReader reader = new XSSFReader(pkg);
+        org.apache.poi.xssf.model.SharedStrings sst = reader.getSharedStringsTable();
+        var saxFactory = SAXParserFactory.newInstance();
+        saxFactory.setNamespaceAware(true);
+        var parser = saxFactory.newSAXParser().getXMLReader();
+
+        int sheetIdx = 0;
+        XSSFReader.SheetIterator sheetIter = (XSSFReader.SheetIterator) reader.getSheetsData();
+        while (sheetIter.hasNext()) {
+            InputStream sheetStream = sheetIter.next();
+            String sheetName = sheetIter.getSheetName();
+            log.info("流式解析 Sheet[{}]: {}", sheetIdx, sheetName);
+
+            SheetHandler handler = new SheetHandler(sst);
+            parser.setContentHandler(handler);
+            parser.parse(new InputSource(sheetStream));
+            sheetStream.close();
+
+            ParsedSheet ps = new ParsedSheet();
+            ps.sheetName = sheetName;
+            ps.rows = handler.getRows();
+            ps.colCount = handler.maxCol;
+            ps.mergeConfig = (JSONObject) JSONObject.toJSON(handler.mergeConfig);
+            ps.columnWidths = (JSONObject) JSONObject.toJSON(handler.columnWidths);
+            result.put(sheetIdx, ps);
+            sheetIdx++;
+        }
+        pkg.close();
+        log.info("流式解析完成，共 {} 个 Sheet", sheetIdx);
+        return result;
+    }
+
+    /** 将流式解析结果转为兼容 celldata JSON */
+    public static JSONArray toCelldata(Map<Integer, Map<Integer, String>> rows) {
+        JSONArray celldata = new JSONArray();
+        for (var rowEntry : rows.entrySet()) {
+            int r = rowEntry.getKey();
+            for (var colEntry : rowEntry.getValue().entrySet()) {
+                int c = colEntry.getKey();
+                String val = colEntry.getValue();
+                JSONObject cell = new JSONObject();
+                cell.put("r", r);
+                cell.put("c", c);
+                JSONObject vObj = new JSONObject();
+                vObj.put("v", val);
+                vObj.put("m", val);
+                JSONObject ct = new JSONObject();
+                ct.put("fa", "General");
+                ct.put("t", "s");
+                vObj.put("ct", ct);
+                cell.put("v", vObj);
+                celldata.add(cell);
+            }
+        }
+        return celldata;
+    }
+
+    public static JSONObject toMergeConfig(Map<String, JSONObject> merges) {
+        JSONObject cfg = new JSONObject();
+        merges.forEach(cfg::put);
+        return cfg;
+    }
+
+    public static JSONObject toColumnWidths(Map<Integer, Integer> widths) {
+        JSONObject cfg = new JSONObject();
+        widths.forEach((k, v) -> cfg.put(String.valueOf(k), v));
+        return cfg;
+    }
+
+    public static class ParsedSheet {
+        public String sheetName;
+        public Map<Integer, Map<Integer, String>> rows;
+        public int colCount;
+        public JSONObject mergeConfig;
+        public JSONObject columnWidths;
+    }
+
+    /** SAX Handler：逐行解析单元格 + 合并单元格 + 列宽。 */
+    private static class SheetHandler extends DefaultHandler {
+
+        private final org.apache.poi.xssf.model.SharedStrings sst;
+        private final Map<Integer, Map<Integer, String>> rows = new LinkedHashMap<>();
+        private final Map<String, JSONObject> mergeConfig = new LinkedHashMap<>();
+        private final Map<Integer, Integer> columnWidths = new LinkedHashMap<>();
+        private int maxCol = 0;
+        private int maxRow = 0;
+
+        private String cellRef;
+        private String cellType;
+        private String cellStyle;
+        private boolean inV;
+        private boolean inF;
+        private boolean isFormula;
+        private StringBuilder cellValue = new StringBuilder();
+        private StringBuilder formulaText = new StringBuilder();
+
+        // 合并单元格解析
+        private boolean inMergeCell;
+        private int mergeFirstRow, mergeLastRow, mergeFirstCol, mergeLastCol;
+
+        SheetHandler(org.apache.poi.xssf.model.SharedStrings sst) {
+            this.sst = sst;
+        }
+
+        @Override
+        public void startElement(String uri, String localName, String qName, Attributes attrs) {
+            switch (qName) {
+                case "c" -> {
+                    cellRef = attrs.getValue("r");
+                    cellType = attrs.getValue("t");
+                    cellStyle = attrs.getValue("s");
+                    cellValue.setLength(0);
+                    isFormula = false;
+                }
+                case "v" -> inV = true;
+                case "f" -> { inF = true; isFormula = true; formulaText.setLength(0); }
+                case "mergeCell" -> {
+                    inMergeCell = true;
+                    String ref = attrs.getValue("ref");
+                    if (ref != null) {
+                        String[] parts = ref.split(":");
+                        int[] tl = parseCellRef(parts[0]);
+                        int[] br = parts.length > 1 ? parseCellRef(parts[1]) : tl;
+                        mergeFirstRow = tl[0]; mergeLastRow = br[0];
+                        mergeFirstCol = tl[1]; mergeLastCol = br[1];
+                    }
+                }
+                case "col" -> {
+                    String min = attrs.getValue("min");
+                    String max = attrs.getValue("max");
+                    String width = attrs.getValue("width");
+                    if (min != null && width != null) {
+                        double w = Double.parseDouble(width);
+                        int colIdx = Integer.parseInt(min) - 1;
+                        columnWidths.put(colIdx, (int) Math.round(w * 7.2));
+                    }
+                }
+            }
+        }
+
+        @Override
+        public void characters(char[] ch, int start, int length) {
+            if (inV) cellValue.append(ch, start, length);
+            if (inF) formulaText.append(ch, start, length);
+        }
+
+        @Override
+        public void endElement(String uri, String localName, String qName) {
+            switch (qName) {
+                case "v" -> inV = false;
+                case "f" -> inF = false;
+                case "mergeCell" -> {
+                    if (inMergeCell) {
+                        mergeConfig.put(mergeFirstRow + "_" + mergeFirstCol, createMergeEntry());
+                        inMergeCell = false;
+                    }
+                }
+                case "c" -> {
+                    if (cellRef == null) break;
+                    int[] pos = parseCellRef(cellRef);
+                    int r = pos[0], c = pos[1];
+                    maxRow = Math.max(maxRow, r);
+                    maxCol = Math.max(maxCol, c + 1);
+
+                    String val;
+                    if (isFormula && formulaText.length() > 0) {
+                        val = "=" + formulaText.toString();
+                    } else {
+                        String raw = cellValue.toString();
+                        if ("s".equals(cellType) && !raw.isEmpty()) {
+                            int idx = Integer.parseInt(raw);
+                            val = sst.getItemAt(idx).getString();
+                        } else {
+                            val = raw;
+                        }
+                    }
+                    if (!val.isEmpty()) {
+                        rows.computeIfAbsent(r, k -> new LinkedHashMap<>()).put(c, val);
+                    }
+                }
+            }
+        }
+
+        private JSONObject createMergeEntry() {
+            JSONObject m = new JSONObject();
+            m.put("r", mergeFirstRow);
+            m.put("c", mergeFirstCol);
+            m.put("rs", mergeLastRow - mergeFirstRow + 1);
+            m.put("cs", mergeLastCol - mergeFirstCol + 1);
+            return m;
+        }
+
+        private int[] parseCellRef(String ref) {
+            String col = ref.replaceAll("\\d", "");
+            String row = ref.replaceAll("\\D", "");
+            int c = 0;
+            for (int i = 0; i < col.length(); i++) c = c * 26 + (col.charAt(i) - 'A' + 1);
+            return new int[]{Integer.parseInt(row) - 1, c - 1};
+        }
+
+        Map<Integer, Map<Integer, String>> getRows() { return rows; }
+    }
+}

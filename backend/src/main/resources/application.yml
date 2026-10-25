@@ -1,0 +1,88 @@
+spring:
+  profiles:
+    active: local
+  config:
+    import:
+      # start-all.ps1 会加载根目录 .env，但 IDEA 直接运行不会；
+      # 这里把 .env 当 properties 导入，保证两种启动方式都拿到数据库密码等配置。
+      # ./ 覆盖工作目录为项目根的情况，../ 覆盖工作目录为 backend 的情况。
+      - optional:file:./.env[.properties]
+      - optional:file:../.env[.properties]
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 60MB
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 0
+    locations: classpath:db/migration
+
+# 国内可直连的免费网络搜索（必应中文站，无需 API Key）。
+# 安全基线：默认关闭；仅管理员在明确评估 SSRF/合规风险后按环境开启。
+web-search:
+  enabled: false
+  timeout-seconds: 8
+  top-k: 10
+  bing:
+    language: zh-CN
+
+# 知识库自动路由与多库检索配额
+kb-routing:
+  enabled: true
+  max-groups: 3
+  doc-sample-limit: 100
+  per-group-top-k: 3
+  overall-top-k: 12
+
+# 混合检索参数（运维可调，无需改代码；非法值在代码内自动收敛到安全下限）
+argus:
+  rag:
+    retrieval:
+      # 单个检索通道（向量/关键词）单次查询返回的最大候选数
+      channel-top-k: 50
+      # 进入重排序的最大候选数（Recall K）
+      recall-k: 50
+      # 全局遍历模式最多拉取的文档数，防范上下文超长
+      max-global-documents: 50
+      # 同一文档允许进入最终上下文的最大切片数；0 = 不限制（防止单文档霸占答案时可设为 2-3）
+      max-chunks-per-document: 0
+      # 问答检索器默认返回的证据数
+      top-k: 5
+
+# ──────────────────────────────────────────────
+# MyBatis-Plus 配置
+# ──────────────────────────────────────────────
+mybatis-plus:
+  # Mapper XML 文件扫描路径
+  # classpath*: 支持从多个 jar/模块中加载（多模块项目安全写法）
+  # /mappers/**/*.xml 递归匹配所有子目录下的 XML 映射文件
+  # 当前匹配：mappers/、mappers/document/、mappers/ingestion/ 共 8 个文件
+  mapper-locations: classpath*:/mappers/**/*.xml
+
+  # 实体类别名包扫描路径
+  # 注册后可在 XML 中直接使用类名（如 UserEntity）而无需写全限定名
+  # 扫描 com.argus.rag 包下所有类（含子包），覆盖各模块的 entity 类
+  type-aliases-package: com.argus.rag
+
+  configuration:
+    # 开启下划线到驼峰的自动映射
+    # 数据库字段 user_name → Java 属性 userName，无需逐字段配置 @TableField
+    map-underscore-to-camel-case: true
+
+    # 默认枚举类型处理器
+    # EnumTypeHandler：使用枚举的 name()（字符串）存储到数据库
+    # 对比 EnumOrdinalTypeHandler（按序号存储，枚举顺序变化会导致数据错乱）
+    # 当前项目所有枚举均为简单枚举（无 @EnumValue），按 name 存储最安全
+    default-enum-type-handler: org.apache.ibatis.type.EnumTypeHandler
+
+# ──────────────────────────────────────────────
+# Actuator 端点（默认 profile 同样开启，便于本地/非生产查看 llm.dialogue 指标）
+# 生产 profile 只在此之上叠加 health 探针（见 application-prod.yml）
+# ──────────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+

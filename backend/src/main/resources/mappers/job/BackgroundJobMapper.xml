@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.argus.rag.job.mapper.BackgroundJobMapper">
+
+    <select id="selectByIdempotencyKey" resultType="com.argus.rag.job.model.entity.BackgroundJob">
+        SELECT * FROM background_job WHERE idempotency_key = #{idempotencyKey} LIMIT 1
+    </select>
+
+    <!-- FOR UPDATE SKIP LOCKED：多 Worker 并发领取时，被锁定的行直接跳过，不阻塞不重复 -->
+    <select id="selectDueJobs" resultType="com.argus.rag.job.model.entity.BackgroundJob">
+        SELECT * FROM background_job
+        WHERE (
+              status = 'QUEUED'  AND (next_run_at IS NULL OR next_run_at &lt;= #{now}))
+           OR (status = 'RUNNING' AND lease_until IS NOT NULL AND lease_until &lt;= #{now})
+        ORDER BY id
+        LIMIT #{limit}
+        FOR UPDATE SKIP LOCKED
+    </select>
+
+    <update id="claim">
+        UPDATE background_job
+        SET status = #{toStatus},
+            started_at  = COALESCE(started_at, now()),
+            attempt_count = attempt_count + 1
+        WHERE id = #{id}
+          AND (status = #{fromStatus}
+               OR (status = 'RUNNING' AND lease_until IS NOT NULL AND lease_until &lt;= now()))
+    </update>
+
+    <update id="complete">
+        UPDATE background_job
+        SET status = 'SUCCEEDED', finished_at = #{finishedAt}, lease_owner = NULL, lease_until = NULL
+        WHERE id = #{id} AND lease_owner = #{workerId}
+    </update>
+
+    <update id="updateLease">
+        UPDATE background_job
+        SET lease_owner = #{leaseOwner}, lease_until = #{leaseUntil}
+        WHERE id = #{id}
+    </update>
+</mapper>

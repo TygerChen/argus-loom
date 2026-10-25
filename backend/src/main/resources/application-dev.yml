@@ -1,0 +1,134 @@
+project:
+  name: Argus-backend
+  version: 1.0.0
+
+server:
+  port: 10001
+
+spring:
+  application:
+    name: argus-service
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:argus_rag}
+    username: ${POSTGRES_USERNAME:postgres}
+    # 默认对齐本地开发库（与 application-local.yml 一致）；生产用环境变量 POSTGRES_PASSWORD 覆盖
+    password: ${POSTGRES_PASSWORD:yct412825}
+    driver-class-name: org.postgresql.Driver
+
+  # 文件上传大小限制（Excel 模块需要；P1-07 修复前该段缩进错位挂在 elasticsearch 下从未生效）
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+  # ──────────────────────────────────────────────
+  # Spring AI Alibaba — DashScope 原生配置
+  # ──────────────────────────────────────────────
+  ai:
+    # DashScope 自动配置会冷启动要求 key；无 key 时先禁用（与 application-local.yml 一致），
+    # 用到时再设 spring.ai.dashscope.api-key 或开启。
+    dashscope:
+      enabled: false
+    model:
+      chat: openai
+      # embedding 由本地进程内 bge-small-zh(512 维)承载，见 LocalEmbeddingConfig；不再依赖远端 OpenAI embedding。
+      embedding: local
+    openai:
+      # 未设 OPENAI_API_KEY 时用占位值，避免 Spring AI 冷启动 OpenAiApi 时抛
+      # "OpenAI API key must be set" 导致应用无法启动；真正调用 LLM 前请设置真实 key。
+      api-key: ${OPENAI_API_KEY:local-embedding}
+      base-url: ${OPENAI_BASE_URL:https://api.agnes-ai.cn}
+      chat:
+        options:
+          model: agnes-3.0-flash
+
+    # PGvector 向量存储（复用已有 PostgreSQL）
+    vectorstore:
+      pgvector:
+        dimensions: 512
+        index-type: hnsw
+        distance-type: cosine_distance
+
+storage:
+  minio:
+    endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+    access-key: ${MINIO_ACCESS_KEY:your-minio-access-key}
+    secret-key: ${MINIO_SECRET_KEY:your-minio-secret-key}
+    bucket: ${MINIO_BUCKET:argus-rag-documents}
+
+argus:
+  rag:
+    qa:
+      model-name: agnes-3.0-flash
+    # 可用模型列表（Agnes 平台 OpenAI 兼容接口）
+    models:
+      text:
+        - id: agnes-2.5-flash
+          name: Agnes 2.5 Flash
+          description: 快速轻量模型
+          freeTier: true
+        - id: agnes-3.0-flash
+          name: Agnes 3.0 Flash
+          description: 最新快速模型（默认）
+          freeTier: true
+    auth:
+      jwt-secret: ${ARGUS_RAG_JWT_SECRET:change-me-to-a-32byte-secret-key}
+      issuer: argus-rag
+      access-token-expire-minutes: 30
+      refresh-token-expire-days: 14
+      # 仅开发环境兜底，生产环境仍应显式配置安全密钥。
+      #    jwt-secret: ${ARGUS_RAG_JWT_SECRET:argus_rag-dev-jwt-secret-2026-04-20-32bytes}
+      refresh-cookie-name: ARGUS_RAG_REFRESH_TOKEN
+      refresh-cookie-secure: false
+    dev-admin:
+      username: ${ARGUS_RAG_DEV_ADMIN_USERNAME:your-admin-username}
+      email: ${ARGUS_RAG_DEV_ADMIN_EMAIL:your-admin-email@example.com}
+      display-name: ${ARGUS_RAG_DEV_ADMIN_DISPLAY_NAME:your-display-name}
+      password: ${ARGUS_RAG_DEV_ADMIN_PASSWORD:your-admin-password}
+      user-code: ${ARGUS_RAG_DEV_ADMIN_USER_CODE:your-admin-code}
+    # ──────────────────────────────────────────────
+    # LLM 调用超时与重试配置（P1-07：此前缩进错位挂在 elasticsearch 下，永不生效）
+    # ──────────────────────────────────────────────
+    llm:
+      # 单次 LLM 调用超时（秒），避免请求被无限挂起
+      timeout-seconds: 45
+      # 最大重试次数
+      max-retries: 3
+      # 重试初始延迟（毫秒）
+      retry-initial-delay-ms: 1000
+      # 重试延迟倍增因子
+      retry-multiplier: 2
+      # 重试最大延迟（毫秒）
+      retry-max-delay-ms: 8000
+    # ──────────────────────────────────────────────
+    # Excel 模块（DataLoom 融合）配置
+    # ──────────────────────────────────────────────
+    excel:
+      upload-path: ${ARGUS_EXCEL_UPLOAD_PATH:./upload}
+    # WebSocket（STOMP/SockJS）允许的跨域来源（P2-08：不再写死 "*"）
+    websocket:
+      allowed-origin-patterns: ${ARGUS_WS_ALLOWED_ORIGINS:http://localhost:8081,http://127.0.0.1:8081,http://localhost:10001}
+
+elasticsearch:
+  host: ${ES_HOST:localhost}
+  port: ${ES_PORT:9200}
+  scheme: ${ES_SCHEME:http}
+  index-name: argus_rag_document_chunks
+
+ingestion:
+    # 启动回收遗留 PROCESSING 文档的时间窗（分钟）：多实例下不误杀活实例在途文档
+  stale-processing-threshold-minutes: 10
+  chunking:
+    target-tokens: 240
+    max-tokens: 320
+    overlap-tokens: 32
+    chars-per-token: 2
+  vector:
+    # 控制业务侧每次调用 VectorStore.add 的 chunk 数量，降低单次 Ollama embedding 请求压力。
+    add-batch-size: 9
+
+youcom:
+  search:
+    enabled: false
+    api-key: ${YOUCOM_API_KEY:}
+    top-k: 10

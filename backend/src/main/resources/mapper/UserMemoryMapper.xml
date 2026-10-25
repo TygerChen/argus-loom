@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.argus.rag.assistant.memory.longterm.UserMemoryMapper">
+
+    <resultMap id="BaseResultMap" type="com.argus.rag.assistant.memory.longterm.UserMemoryEntity">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="memory_type" property="memoryType"/>
+        <result column="topic" property="topic"/>
+        <result column="content" property="content"/>
+        <result column="source" property="source"/>
+        <result column="confidence" property="confidence"/>
+        <result column="importance" property="importance"/>
+        <result column="status" property="status"/>
+        <result column="source_session_id" property="sourceSessionId"/>
+        <result column="expires_at" property="expiresAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+        <result column="superseded_by" property="supersededBy"/>
+        <result column="metadata_json" property="metadataJson"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.argus.rag.assistant.memory.longterm.UserMemoryEntity"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO user_memories (
+            user_id, tenant_id, memory_type, topic, content,
+            source, confidence, importance, status, source_session_id,
+            expires_at, created_at, updated_at, superseded_by, metadata_json
+        ) VALUES (
+            #{userId}, #{tenantId}, #{memoryType}, #{topic}, #{content},
+            #{source}, #{confidence}, #{importance}, #{status}, #{sourceSessionId},
+            #{expiresAt}, #{createdAt}, #{updatedAt}, #{supersededBy}, #{metadataJson}
+        )
+    </insert>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT * FROM user_memories WHERE id = #{id}
+    </select>
+
+    <select id="selectByTopic" resultMap="BaseResultMap">
+        SELECT * FROM user_memories
+        WHERE user_id = #{userId}
+          AND tenant_id = #{tenantId}
+          AND topic = #{topic}
+          AND status = #{status}
+        ORDER BY updated_at DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectActiveByUser" resultMap="BaseResultMap">
+        SELECT * FROM user_memories
+        WHERE user_id = #{userId}
+          AND tenant_id = #{tenantId}
+          AND status = 'ACTIVE'
+          AND (expires_at IS NULL OR expires_at > NOW())
+        ORDER BY updated_at DESC
+    </select>
+
+    <update id="update" parameterType="com.argus.rag.assistant.memory.longterm.UserMemoryEntity">
+        UPDATE user_memories
+        SET status = #{status},
+            confidence = #{confidence},
+            importance = #{importance},
+            superseded_by = #{supersededBy},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <update id="expireOutdated">
+        UPDATE user_memories
+        SET status = 'EXPIRED', updated_at = NOW()
+        WHERE status = 'ACTIVE'
+          AND expires_at IS NOT NULL
+          AND expires_at &lt;= NOW()
+    </update>
+
+    <select id="countByUserTenantStatus" resultType="java.lang.Long">
+        SELECT COUNT(*) FROM user_memories
+        WHERE user_id = #{userId}
+          AND tenant_id = #{tenantId}
+          AND status = #{status}
+    </select>
+
+</mapper>
