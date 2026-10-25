@@ -36,8 +36,8 @@ spring:
     openai:
       # 未设 OPENAI_API_KEY 时用占位值，避免 Spring AI 冷启动 OpenAiApi 时抛
       # "OpenAI API key must be set" 导致应用无法启动；真正调用 LLM 前请设置真实 key。
-      api-key: ${OPENAI_API_KEY:local-embedding}
-      base-url: ${OPENAI_BASE_URL:https://api.agnes-ai.cn}
+      api-key: ${OPENAI_API_KEY:change-me-set-in-env}
+      base-url: ${OPENAI_BASE_URL:change-me-set-in-env}
       chat:
         options:
           model: agnes-3.0-flash
@@ -51,10 +51,10 @@ spring:
 
 storage:
   minio:
-    endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
-    access-key: ${MINIO_ACCESS_KEY:your-minio-access-key}
-    secret-key: ${MINIO_SECRET_KEY:your-minio-secret-key}
-    bucket: ${MINIO_BUCKET:argus-rag-documents}
+    endpoint: ${MINIO_ENDPOINT:change-me-set-in-env}
+    access-key: ${MINIO_ACCESS_KEY:change-me-set-in-env}
+    secret-key: ${MINIO_SECRET_KEY:change-me-set-in-env}
+    bucket: ${MINIO_BUCKET:change-me-set-in-env}
 
 argus:
   rag:
@@ -72,20 +72,20 @@ argus:
           description: 最新快速模型（默认）
           freeTier: true
     auth:
-      jwt-secret: ${ARGUS_RAG_JWT_SECRET:change-me-to-a-32byte-secret-key}
+      jwt-secret: ${ARGUS_RAG_JWT_SECRET:change-me-use-env-var-32-chars-min!!}
       issuer: argus-rag
       access-token-expire-minutes: 30
       refresh-token-expire-days: 14
       # 仅开发环境兜底，生产环境仍应显式配置安全密钥。
-      #    jwt-secret: ${ARGUS_RAG_JWT_SECRET:argus_rag-dev-jwt-secret-2026-04-20-32bytes}
+      #    jwt-secret: ${ARGUS_RAG_JWT_SECRET:change-me-use-env-var-32-chars-min!!}
       refresh-cookie-name: ARGUS_RAG_REFRESH_TOKEN
       refresh-cookie-secure: false
     dev-admin:
-      username: ${ARGUS_RAG_DEV_ADMIN_USERNAME:your-admin-username}
-      email: ${ARGUS_RAG_DEV_ADMIN_EMAIL:your-admin-email@example.com}
-      display-name: ${ARGUS_RAG_DEV_ADMIN_DISPLAY_NAME:your-display-name}
-      password: ${ARGUS_RAG_DEV_ADMIN_PASSWORD:your-admin-password}
-      user-code: ${ARGUS_RAG_DEV_ADMIN_USER_CODE:your-admin-code}
+      username: ${ARGUS_RAG_DEV_ADMIN_USERNAME:change-me-set-in-env}
+      email: ${ARGUS_RAG_DEV_ADMIN_EMAIL:change-me-set-in-env}
+      display-name: ${ARGUS_RAG_DEV_ADMIN_DISPLAY_NAME:change-me-set-in-env}
+      password: ${ARGUS_RAG_DEV_ADMIN_PASSWORD:change-me-set-in-env}
+      user-code: ${ARGUS_RAG_DEV_ADMIN_USER_CODE:change-me-set-in-env}
     # ──────────────────────────────────────────────
     # LLM 调用超时与重试配置（P1-07：此前缩进错位挂在 elasticsearch 下，永不生效）
     # ──────────────────────────────────────────────
@@ -107,7 +107,7 @@ argus:
       upload-path: ${ARGUS_EXCEL_UPLOAD_PATH:./upload}
     # WebSocket（STOMP/SockJS）允许的跨域来源（P2-08：不再写死 "*"）
     websocket:
-      allowed-origin-patterns: ${ARGUS_WS_ALLOWED_ORIGINS:http://localhost:8081,http://127.0.0.1:8081,http://localhost:10001}
+      allowed-origin-patterns: ${ARGUS_WS_ALLOWED_ORIGINS:change-me-set-in-env}
 
 elasticsearch:
   host: ${ES_HOST:localhost}
