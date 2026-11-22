@@ -4,6 +4,14 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { extractApiError } from '@/api/http'
 import { fetchModels, type ModelInfo } from '@/api/models'
+import {
+  getModelConfig,
+  saveModelConfig,
+  clearModelConfig,
+  testModelConnection,
+  type ModelConfigView,
+  type TestConnectionResult,
+} from '@/api/settings'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -15,6 +23,132 @@ const enabledModels = computed(() => models.value.filter(m => m.enabled ?? true)
 const selectedModel = ref(localStorage.getItem('argus-selected-model') || '')
 const modelsLoading = ref(false)
 
+// ── 模型设置（BYOK）：自带 API 地址/密钥/模型 ID，服务端加密落库 ──
+const modelForm = reactive({
+  baseUrl: '',
+  apiKey: '',
+  modelId: '',
+  enabled: true,
+})
+const modelMaskedKey = ref<string | null>(null)
+const modelUpdatedAt = ref<string | null>(null)
+const modelLoading = ref(false)
+const modelSaving = ref(false)
+const modelTesting = ref(false)
+const modelMsg = ref('')
+const modelErr = ref('')
+
+// 主流 OpenAI 兼容服务商预设（baseUrl 为各官方文档公布的 OpenAI 兼容端点）；
+// 一键填充 baseUrl 与模型 ID，密钥仍需用户自行填写
+const modelPresets = [
+  { label: 'Agnes（平台默认）', baseUrl: 'https://api.agnes-ai.cn', modelId: 'agnes-3.0-flash' },
+  { label: 'AMD MiniCPM-V', baseUrl: 'https://developer.amd.com.cn/radeon/api', modelId: 'MiniCPM-V-4.7-35B-A3B' },
+  { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com', modelId: 'deepseek-chat' },
+  { label: '通义千问 Qwen', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode', modelId: 'qwen-plus' },
+  { label: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas', modelId: 'glm-4-flash' },
+  { label: 'Kimi (Moonshot)', baseUrl: 'https://api.moonshot.cn', modelId: 'moonshot-v1-8k' },
+  { label: '硅基流动 SiliconFlow', baseUrl: 'https://api.siliconflow.cn', modelId: 'Qwen/Qwen2.5-7B-Instruct' },
+  { label: 'OpenAI', baseUrl: 'https://api.openai.com', modelId: 'gpt-4o-mini' },
+  { label: 'Ollama（本机）', baseUrl: 'http://localhost:11434', modelId: 'qwen2.5' },
+]
+
+function applyModelPreset(preset: { label: string; baseUrl: string; modelId: string }) {
+  modelForm.baseUrl = preset.baseUrl
+  modelForm.modelId = preset.modelId
+  modelMsg.value = `已填入 ${preset.label} 预设，请补充 API Key 后保存`
+  modelErr.value = ''
+}
+const testResult = ref<TestConnectionResult | null>(null)
+
+async function loadModelConfig() {
+  modelLoading.value = true
+  modelErr.value = ''
+  try {
+    const view: ModelConfigView = await getModelConfig()
+    modelForm.baseUrl = view.baseUrl ?? ''
+    modelForm.modelId = view.modelId ?? ''
+    modelForm.enabled = view.enabled
+    modelMaskedKey.value = view.maskedKey
+    modelUpdatedAt.value = view.updatedAt
+    // 已有配置时密钥留空 = 沿用；新配置才要求输入
+  } catch (err) {
+    modelErr.value = extractApiError(err, '加载模型配置失败')
+  } finally {
+    modelLoading.value = false
+  }
+}
+
+async function handleSaveModelConfig() {
+  modelErr.value = ''
+  modelMsg.value = ''
+  if (!modelForm.baseUrl.trim() || !modelForm.modelId.trim()) {
+    modelErr.value = '请填写 API 地址与模型 ID'
+    return
+  }
+  if (!modelMaskedKey.value && !modelForm.apiKey.trim()) {
+    modelErr.value = '请填写 API Key'
+    return
+  }
+  modelSaving.value = true
+  try {
+    await saveModelConfig({
+      baseUrl: modelForm.baseUrl.trim(),
+      apiKey: modelForm.apiKey.trim() || undefined,
+      modelId: modelForm.modelId.trim(),
+      enabled: modelForm.enabled,
+    })
+    modelMsg.value = '模型配置已保存，问答与 AI 助手将优先使用这套模型'
+    modelForm.apiKey = ''
+    await loadModelConfig()
+  } catch (err) {
+    modelErr.value = extractApiError(err, '保存模型配置失败')
+  } finally {
+    modelSaving.value = false
+  }
+}
+
+async function handleClearModelConfig() {
+  modelErr.value = ''
+  modelMsg.value = ''
+  modelSaving.value = true
+  try {
+    await clearModelConfig()
+    modelMsg.value = '已清除，恢复使用平台默认模型'
+    modelForm.baseUrl = ''
+    modelForm.modelId = ''
+    modelForm.apiKey = ''
+    modelMaskedKey.value = null
+    modelUpdatedAt.value = null
+  } catch (err) {
+    modelErr.value = extractApiError(err, '清除模型配置失败')
+  } finally {
+    modelSaving.value = false
+  }
+}
+
+async function handleTestModelConfig() {
+  modelErr.value = ''
+  modelMsg.value = ''
+  testResult.value = null
+  if (!modelForm.baseUrl.trim() || !modelForm.modelId.trim()) {
+    modelErr.value = '请先填写 API 地址与模型 ID'
+    return
+  }
+  modelTesting.value = true
+  try {
+    testResult.value = await testModelConnection({
+      baseUrl: modelForm.baseUrl.trim(),
+      apiKey: modelForm.apiKey.trim() || undefined,
+      modelId: modelForm.modelId.trim(),
+      enabled: modelForm.enabled,
+    })
+  } catch (err) {
+    modelErr.value = extractApiError(err, '测试请求失败')
+  } finally {
+    modelTesting.value = false
+  }
+}
+
 onMounted(async () => {
   modelsLoading.value = true
   try {
@@ -25,6 +159,7 @@ onMounted(async () => {
     }
   } catch { /* ignore */ }
   finally { modelsLoading.value = false }
+  loadModelConfig()
 })
 
 watch(selectedModel, (val) => {
@@ -124,6 +259,92 @@ async function handleChangePassword() {
         </p>
       </div>
       <p v-if="modelsLoading" class="model-desc">正在加载模型列表...</p>
+    </div>
+
+    <!-- 模型设置（BYOK）：自带 API 地址/密钥/模型 ID -->
+    <div class="settings-card">
+      <div class="card-title-row">
+        <h2 class="card-title">模型设置</h2>
+        <span v-if="modelMaskedKey" class="model-status-tag" :class="{ 'is-on': modelForm.enabled }">
+          {{ modelForm.enabled ? '已启用' : '已停用' }}
+        </span>
+      </div>
+      <p class="card-desc">
+        自带模型（OpenAI 兼容接口）：配置后问答与 AI 助手优先使用这套模型；
+        密钥加密保存在服务端，未配置时使用平台默认。
+      </p>
+
+      <div v-if="modelLoading" class="model-desc">正在加载配置...</div>
+      <template v-else>
+        <div class="model-form-grid">
+          <div class="input-group">
+            <label>API 地址（OpenAI 兼容，不含 /v1 以外路径也支持）</label>
+            <input
+              v-model="modelForm.baseUrl"
+              type="text"
+              placeholder="如 https://api.agnes-ai.cn"
+              autocomplete="off"
+            />
+          </div>
+          <div class="input-group">
+            <label>模型 ID</label>
+            <input
+              v-model="modelForm.modelId"
+              type="text"
+              placeholder="如 agnes-3.0-flash / gpt-4o-mini / deepseek-chat"
+              autocomplete="off"
+            />
+          </div>
+          <div class="input-group">
+            <label>API Key {{ modelMaskedKey ? `（已保存 ${modelMaskedKey}，留空 = 沿用）` : '' }}</label>
+            <input
+              v-model="modelForm.apiKey"
+              type="password"
+              :placeholder="modelMaskedKey ? '留空则沿用已保存的密钥' : 'sk-...'"
+              autocomplete="new-password"
+            />
+          </div>
+          <label class="model-enabled-row">
+            <input v-model="modelForm.enabled" type="checkbox" />
+            <span>启用这套模型（关闭后保留配置但不生效）</span>
+          </label>
+        </div>
+
+        <p v-if="modelUpdatedAt" class="model-desc">上次更新：{{ new Date(modelUpdatedAt).toLocaleString('zh-CN') }}</p>
+
+        <div class="preset-row">
+          <span class="preset-row__label">快速导入：</span>
+          <button
+            v-for="preset in modelPresets"
+            :key="preset.label"
+            type="button"
+            class="preset-chip"
+            @click="applyModelPreset(preset)"
+          >
+            {{ preset.label }}
+          </button>
+        </div>
+
+        <div class="model-actions">
+          <button class="btn-primary" :disabled="modelSaving || modelTesting" @click="handleSaveModelConfig">
+            {{ modelSaving ? '保存中...' : '保存配置' }}
+          </button>
+          <button class="btn-ghost" :disabled="modelTesting || modelSaving" @click="handleTestModelConfig">
+            {{ modelTesting ? '测试中...' : '测试连接' }}
+          </button>
+          <button v-if="modelMaskedKey" class="btn-danger-ghost" :disabled="modelSaving" @click="handleClearModelConfig">
+            恢复平台默认
+          </button>
+        </div>
+
+        <p v-if="testResult" class="test-result" :class="testResult.ok ? 'is-ok' : 'is-fail'">
+          {{ testResult.ok
+            ? `✓ 连接成功${testResult.latencyMs != null ? `（${testResult.latencyMs}ms）` : ''}${testResult.reply ? ` · 模型回复：${testResult.reply}` : ''}`
+            : `✗ ${testResult.message}` }}
+        </p>
+        <p v-if="modelMsg" class="model-msg-ok">{{ modelMsg }}</p>
+        <p v-if="modelErr" class="model-msg-err">{{ modelErr }}</p>
+      </template>
     </div>
 
     <!-- 修改密码 -->
@@ -330,4 +551,119 @@ async function handleChangePassword() {
   opacity: 0.6;
   cursor: not-allowed;
 }
+/* ── 模型设置（BYOK） ── */
+.card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.model-status-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 2px 10px;
+  border-radius: 100px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+}
+.model-status-tag.is-on {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+}
+.model-form-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 14px 0 4px;
+}
+.model-enabled-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.model-enabled-row input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--brand-primary);
+}
+.preset-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.preset-row__label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.preset-chip {
+  padding: 3px 12px;
+  font-family: inherit;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: 100px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.preset-chip:hover {
+  color: var(--brand-primary);
+  border-color: var(--brand-primary);
+  background: var(--surface-accent);
+  transform: translateY(-1px);
+}
+.model-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.model-actions button {
+  padding: 8px 18px;
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  border: 1px solid transparent;
+}
+.model-actions .btn-primary {
+  color: #fff;
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-dark));
+  box-shadow: 0 3px 10px rgba(74, 144, 217, 0.25);
+}
+.model-actions .btn-primary:hover:not(:disabled) { transform: translateY(-1px); }
+.model-actions .btn-ghost {
+  color: var(--brand-primary);
+  background: var(--surface-accent);
+  border-color: rgba(74, 144, 217, 0.25);
+}
+.model-actions .btn-ghost:hover:not(:disabled) { border-color: var(--brand-primary); }
+.model-actions .btn-danger-ghost {
+  color: var(--el-color-danger);
+  background: transparent;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+.model-actions .btn-danger-ghost:hover:not(:disabled) { background: rgba(239, 68, 68, 0.06); }
+.model-actions button:disabled { opacity: 0.55; cursor: not-allowed; }
+.test-result {
+  margin: 12px 0 0;
+  font-size: 0.82rem;
+  padding: 9px 14px;
+  border-radius: var(--radius-sm);
+  line-height: 1.5;
+  word-break: break-all;
+}
+.test-result.is-ok { background: rgba(16, 185, 129, 0.08); color: #059669; border: 1px solid rgba(16, 185, 129, 0.2); }
+.test-result.is-fail { background: rgba(239, 68, 68, 0.06); color: #dc2626; border: 1px solid rgba(239, 68, 68, 0.18); }
+.model-msg-ok { margin: 8px 0 0; font-size: 0.8rem; color: #059669; }
+.model-msg-err { margin: 8px 0 0; font-size: 0.8rem; color: var(--el-color-danger); }
 </style>

@@ -1,6 +1,8 @@
 spring:
   profiles:
-    active: local
+    # 默认开发 profile（仓库只有 application-dev.yml / application-prod.yml，
+    # 历史遗留的 application-local.yml 已不存在；生产用 SPRING_PROFILES_ACTIVE=prod 覆盖）
+    active: dev
   config:
     import:
       # start-all.ps1 会加载根目录 .env，但 IDEA 直接运行不会；
@@ -38,6 +40,38 @@ kb-routing:
 # 混合检索参数（运维可调，无需改代码；非法值在代码内自动收敛到安全下限）
 argus:
   rag:
+    qa:
+      # 多轮会话记忆默认值（V12）；dev/prod 环境在各自 yml 覆盖
+      memory:
+        enabled: true
+        rewrite-enabled: true
+        continue-window-seconds: 300
+        recent-turns: 3
+        turn-max-chars: 400
+        summary-trigger-turns: 3
+        summary-merge-turns: 6
+        summary-max-chars: 400
+        rewrite-context-max-chars: 1200
+    fund-report:
+      schedule-enabled: ${ARGUS_FUND_REPORT_SCHEDULE_ENABLED:false}
+      schedule-cron: ${ARGUS_FUND_REPORT_SCHEDULE_CRON:0 18 20 * * *}
+    task-report:
+      # 第十步扩展：任务进度日报（通用日报引擎实例 #2，在线协作表数据源）
+      schedule-enabled: true
+      schedule-cron: "0 0 18 * * *"
+    assistant:
+      understanding:
+        # 第二步（理解任务）：进 Agent 前先做语义理解（类型/意图/实体/歧义），失败 fail-soft
+        enabled: true
+      planning:
+        # 第三步（制定方案）：模型提议+代码校验产出执行计划书；LLM 失败走代码兜底方案
+        enabled: true
+      loop:
+        # 第四步（组装上下文）：任务循环状态（轮次/预算/工具结果摘要/退出条件）每轮注入
+        enabled: true
+      verification:
+        # 第八步（验证结果）：生成后独立校验（裁判对照证据逐条核查），未获支撑→降级标注
+        enabled: true
     retrieval:
       # 单个检索通道（向量/关键词）单次查询返回的最大候选数
       channel-top-k: 50
@@ -85,4 +119,9 @@ management:
     web:
       exposure:
         include: health,info,prometheus
-
+  endpoint:
+    health:
+      # 展示组件级健康详情（db/queue/diskSpace），前端"系统总览"的真实健康面板依赖它。
+      # /actuator/health 在 SecurityConfig 中匿名放行，若生产需隐藏细节，
+      # 在 application-prod.yml 用 show-details: when-authorized 收紧。
+      show-details: always

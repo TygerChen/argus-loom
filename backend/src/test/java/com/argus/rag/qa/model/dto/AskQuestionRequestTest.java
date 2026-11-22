@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * {@link AskQuestionRequest} 问答请求校验契约（独立 jakarta Validator/纯 JVM/零 Spring）。
  * groupId @NotNull+@Positive（null→「groupId 不能为空」、≤0→「groupId 非法」）；
- * question @NotBlank+@Size(2000)（空白→「问题不能为空」、超长→「问题长度不能超过 2000」）。
+ * question @NotBlank+@Size(8000)（空白→「问题不能为空」、超长→「问题长度不能超过 8000」）。
  */
 @DisplayName("知识问答请求校验（AskQuestionRequest）")
 class AskQuestionRequestTest {
@@ -73,8 +73,8 @@ class AskQuestionRequestTest {
 
     @Test
     void oversizeQuestionIsViolated() {
-        String longQ = "x".repeat(2001);
-        assertTrue(messages(req(1L, longQ)).contains("问题长度不能超过 2000"));
+        String longQ = "x".repeat(8001);
+        assertTrue(messages(req(1L, longQ)).contains("问题长度不能超过 8000"));
     }
 
     @Test
@@ -85,8 +85,8 @@ class AskQuestionRequestTest {
 
     @Test
     void maxLengthQuestionPassesSizeBound() {
-        String q = "x".repeat(2000);
-        assertTrue(!messages(req(1L, q)).contains("问题长度不能超过 2000"),
-                "恰为 2000 字符不应超长");
+        String q = "x".repeat(8000);
+        assertTrue(!messages(req(1L, q)).contains("问题长度不能超过 8000"),
+                "恰为 8000 字符不应超长");
     }
 }

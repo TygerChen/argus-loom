@@ -105,9 +105,12 @@ public class HybridChunkRetrievalService {
             DocumentChunkMapper documentChunkMapper,
             QueryPlanningService queryPlanningService,
             DocumentMapper documentMapper,
+            RerankingService rerankingService,
             DocumentRoleGate roleGate,
             RetrievalOptions retrievalOptions) {
-        this(vectorRetrievalAdapter, elasticsearchChunkIndexService, youcomSearchService, documentChunkMapper, queryPlanningService, documentMapper, null, roleGate, DEFAULT_NEIGHBOR_WINDOW, retrievalOptions);
+        // 生产修复（2026-11-08）：原先此处硬编码 rerankingService=null → 永远回退 NoOp，
+        // remote 精排 Bean 装配了也不生效（PROJECT_TRUTH 中"Reranker 是 NoOp"的真正含义）。
+        this(vectorRetrievalAdapter, elasticsearchChunkIndexService, youcomSearchService, documentChunkMapper, queryPlanningService, documentMapper, rerankingService, roleGate, DEFAULT_NEIGHBOR_WINDOW, retrievalOptions);
     }
 
     public HybridChunkRetrievalService(

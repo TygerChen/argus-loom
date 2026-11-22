@@ -11,8 +11,8 @@ spring:
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:argus_rag}
     username: ${POSTGRES_USERNAME:postgres}
-    # 默认对齐本地开发库（与 application-local.yml 一致）；生产用环境变量 POSTGRES_PASSWORD 覆盖
-    password: ${POSTGRES_PASSWORD:yct412825}
+    # 真实密码只从环境变量 / .env 注入（POSTGRES_PASSWORD），不在此处落明文默认值
+    password: ${POSTGRES_PASSWORD:}
     driver-class-name: org.postgresql.Driver
 
   # 文件上传大小限制（Excel 模块需要；P1-07 修复前该段缩进错位挂在 elasticsearch 下从未生效）
@@ -60,6 +60,30 @@ argus:
   rag:
     qa:
       model-name: agnes-3.0-flash
+      # ──────────────────────────────────────────────
+      # 多轮会话记忆（V12）：改写层 + 滚动摘要 + 近期原文窗口
+      # 任何组件失败自动退化为单轮模式（fail-soft），不影响问答主链路
+      # ──────────────────────────────────────────────
+      memory:
+        enabled: true
+        rewrite-enabled: true
+        continue-window-seconds: 300
+        recent-turns: 3
+        turn-max-chars: 400
+        summary-trigger-turns: 3
+        summary-merge-turns: 6
+        summary-max-chars: 400
+        rewrite-context-max-chars: 1200
+    # ──────────────────────────────────────────
+    # 精排（Rerank）：remote = 走本地 Node 网关（D:/Agent/argus-rerank-gateway，
+    # 11435 端口，Xenova/bge-reranker-base ONNX q8）。
+    # 网关未启动时自动回落 RRF 原序（RemoteHttpRerankingService 的容错语义）。
+    # ──────────────────────────────────────────
+    reranking:
+      provider: remote
+      base-url: http://127.0.0.1:11435
+      model: BAAI/bge-reranker-base
+      timeout-ms: 8000
     # 可用模型列表（Agnes 平台 OpenAI 兼容接口）
     models:
       text:
@@ -105,9 +129,11 @@ argus:
     # ──────────────────────────────────────────────
     excel:
       upload-path: ${ARGUS_EXCEL_UPLOAD_PATH:./upload}
-    # WebSocket（STOMP/SockJS）允许的跨域来源（P2-08：不再写死 "*"）
+    # WebSocket（STOMP/SockJS）允许的跨域来源（P2-08：不再写死 "*"）。
+    # 兜底默认给本地前端真实 origin（8081）：.env 未设时本地 STOMP 也能直连，
+    # 不再被 change-me 占位挡掉（生产 profile 仍要求环境变量显式覆盖）。
     websocket:
-      allowed-origin-patterns: ${ARGUS_WS_ALLOWED_ORIGINS:change-me-set-in-env}
+      allowed-origin-patterns: ${ARGUS_WS_ALLOWED_ORIGINS:http://localhost:8081}
 
 elasticsearch:
   host: ${ES_HOST:localhost}
@@ -119,9 +145,11 @@ ingestion:
     # 启动回收遗留 PROCESSING 文档的时间窗（分钟）：多实例下不误杀活实例在途文档
   stale-processing-threshold-minutes: 10
   chunking:
-    target-tokens: 240
-    max-tokens: 320
-    overlap-tokens: 32
+    # 切割实验 B 组（2026-11-07）：500/800/80 = 代码默认值，块更大上下文更完整
+    # 对照 A 组 240/320/32 的评测结果见 docs/RAG优化路线图-评测驱动.md
+    target-tokens: 500
+    max-tokens: 800
+    overlap-tokens: 80
     chars-per-token: 2
   vector:
     # 控制业务侧每次调用 VectorStore.add 的 chunk 数量，降低单次 Ollama embedding 请求压力。

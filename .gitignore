@@ -73,3 +73,6 @@ docs/求职*.md
 docs/投递漏斗*.md
 scripts/投递追踪表.csv
 语雀导入包/
+
+# 本地上传/运行产物，不作为项目源码提交
+/upload/

@@ -60,6 +60,8 @@ export interface AskQuestionPayload {
   groupId: number
   /** 用户问题文本 */
   question: string
+  /** 多轮会话 ID（可选）：携带且未超时间窗时自动延续，服务端回传新会话 ID */
+  conversationId?: number
 }
 
 /**
@@ -85,6 +87,8 @@ export interface AskQuestionResponse {
   citations: CitationItem[]
   evidenceOverview: EvidenceOverview | null
   recordId: number | null
+  /** 多轮会话 ID（V12），前端下一轮提问时回传 */
+  conversationId?: number
 }
 
 /**
@@ -99,7 +103,7 @@ export interface QaStreamHandlers {
   onEvidenceOverview?: (overview: EvidenceOverview | null) => void
   /** 发生错误时回调 */
   onError: (message: string) => void
-  onRecord?: (recordId: number) => void
+  onRecord?: (recordId: number, conversationId?: number) => void
   /** 可用于中断流式连接的 AbortSignal */
   signal?: AbortSignal
 }
@@ -198,6 +202,7 @@ export async function askQuestion(payload: AskQuestionPayload): Promise<AskQuest
   return {
     answered: data.answered,
     answer: data.answer ?? null,
+    conversationId: data.conversationId ?? undefined,
     reasonCode: data.reasonCode ?? null,
     reasonMessage: data.reasonMessage ?? null,
     citations: data.citations ?? [],
@@ -367,9 +372,9 @@ function dispatchQaSseEvent(rawEvent: string, handlers: QaStreamHandlers): void 
     }
     case 'record': {
       try {
-        const parsed = JSON.parse(rawData) as { recordId?: number }
+        const parsed = JSON.parse(rawData) as { recordId?: number; conversationId?: number }
         if (typeof parsed.recordId === 'number') {
-          handlers.onRecord?.(parsed.recordId)
+          handlers.onRecord?.(parsed.recordId, parsed.conversationId)
         }
       } catch {
         // Ignore malformed record events; answer delivery is already complete.

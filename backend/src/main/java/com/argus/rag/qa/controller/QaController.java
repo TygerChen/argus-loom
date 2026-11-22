@@ -81,6 +81,10 @@ public class QaController {
             @Valid @RequestBody AskQuestionRequest askQuestionRequest,
             HttpServletRequest request
     ) {
+        // 入口审计（V13-V15）：补记票据便签（输入长度/身份声明/风险/重复，只记录不裁决）。
+        com.argus.rag.common.task.EntryAuditSupport.inspectUserInput(request, askQuestionRequest.getQuestion());
+        com.argus.rag.common.task.EntryAuditSupport.recordSessionId(request, askQuestionRequest.getConversationId());
+        com.argus.rag.common.task.EntryAuditSupport.recordRequestedGroups(request, List.of(askQuestionRequest.getGroupId()));
         return qaService.ask(request, askQuestionRequest);
     }
 
@@ -93,6 +97,10 @@ public class QaController {
             @Valid @RequestBody AskQuestionRequest askQuestionRequest,
             HttpServletRequest request
     ) {
+        // 入口审计（V13-V15）：流式入口同样补记票据便签。
+        com.argus.rag.common.task.EntryAuditSupport.inspectUserInput(request, askQuestionRequest.getQuestion());
+        com.argus.rag.common.task.EntryAuditSupport.recordSessionId(request, askQuestionRequest.getConversationId());
+        com.argus.rag.common.task.EntryAuditSupport.recordRequestedGroups(request, List.of(askQuestionRequest.getGroupId()));
         AuthenticatedUser authenticatedUser = UserContext.get();
         StreamingResponseBody responseBody = outputStream -> {
             if (authenticatedUser != null) {
@@ -146,7 +154,10 @@ public class QaController {
                         }
                         Long recordId = streamContext.recordId();
                         if (recordId != null) {
-                            writeJsonEvent(outputStream, "record", Map.of("recordId", recordId));
+                            Long conversationId = streamContext.conversationId();
+                            writeJsonEvent(outputStream, "record", conversationId == null
+                                            ? Map.of("recordId", recordId)
+                                            : Map.of("recordId", recordId, "conversationId", conversationId));
                         }
                     } catch (IOException exception) {
                         throw new IllegalStateException("SSE 发送收尾事件失败", exception);

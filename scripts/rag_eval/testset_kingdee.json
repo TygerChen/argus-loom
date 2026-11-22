@@ -1,0 +1,562 @@
+{
+  "name": "金蝶知识库测试集（群组6·449语料）",
+  "answer_coverage_threshold": 0.4,
+  "hit_rate_k": 5,
+  "cases": [
+    {
+      "id": 1,
+      "question": "出纳管理模块怎么使用？",
+      "expected_files": [
+        "出纳管理"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "收付",
+        "银行",
+        "现金"
+      ]
+    },
+    {
+      "id": 2,
+      "question": "固定资产如何管理？",
+      "expected_files": [
+        "固定资产"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "折旧",
+        "卡片",
+        "资产"
+      ]
+    },
+    {
+      "id": 3,
+      "question": "合并报表怎么编制？",
+      "expected_files": [
+        "合并报表"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "合并",
+        "抵消",
+        "母公司"
+      ]
+    },
+    {
+      "id": 4,
+      "question": "预算管理如何设置？",
+      "expected_files": [
+        "预算管理"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "预算",
+        "编制",
+        "执行"
+      ]
+    },
+    {
+      "id": 5,
+      "question": "资金管理模块有哪些功能？",
+      "expected_files": [
+        "资金管理"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "资金",
+        "账户",
+        "调度"
+      ]
+    },
+    {
+      "id": 6,
+      "question": "应付款管理怎么操作？",
+      "expected_files": [
+        "应付款管理"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "应付",
+        "供应商",
+        "付款"
+      ]
+    },
+    {
+      "id": 7,
+      "question": "费用报销流程是什么？",
+      "expected_files": [
+        "费用报销"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "报销",
+        "费用",
+        "审批"
+      ]
+    },
+    {
+      "id": 8,
+      "question": "费用管理怎么做？",
+      "expected_files": [
+        "费用管理"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "费用",
+        "分摊",
+        "归集"
+      ]
+    },
+    {
+      "id": 9,
+      "question": "付款单怎么处理？",
+      "expected_files": [
+        "付款单"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "付款",
+        "结算",
+        "银行"
+      ]
+    },
+    {
+      "id": 10,
+      "question": "发票如何管理？",
+      "expected_files": [
+        "发票管理"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "发票",
+        "进项",
+        "销项"
+      ]
+    },
+    {
+      "id": 11,
+      "question": "出纳期末怎么对账？",
+      "expected_files": [
+        "出纳期末对账"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "对账",
+        "余额",
+        "银行"
+      ]
+    },
+    {
+      "id": 12,
+      "question": "付款申请单怎么提交？",
+      "expected_files": [
+        "付款申请单"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "申请",
+        "审批",
+        "付款"
+      ]
+    },
+    {
+      "id": 13,
+      "question": "付款条件怎么设置？",
+      "expected_files": [
+        "付款条件"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "付款",
+        "账期",
+        "条件"
+      ]
+    },
+    {
+      "id": 14,
+      "question": "到期债务表怎么查？",
+      "expected_files": [
+        "到期债务表"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "债务",
+        "到期",
+        "应付"
+      ]
+    },
+    {
+      "id": 15,
+      "question": "采购管理模块怎么使用？",
+      "expected_files": [
+        "采购管理"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "采购",
+        "订单",
+        "供应商"
+      ]
+    },
+    {
+      "id": 16,
+      "question": "采购入库怎么核算？",
+      "expected_files": [
+        "采购入库核算"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "入库",
+        "核算",
+        "成本"
+      ]
+    },
+    {
+      "id": 17,
+      "question": "采购费用如何分配？",
+      "expected_files": [
+        "采购费用分配"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "费用",
+        "分配",
+        "入库"
+      ]
+    },
+    {
+      "id": 18,
+      "question": "供应商对账单怎么生成？",
+      "expected_files": [
+        "供应商对账单"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "对账",
+        "供应商",
+        "应付"
+      ]
+    },
+    {
+      "id": 19,
+      "question": "供应商如何协同？",
+      "expected_files": [
+        "供应商协同"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "协同",
+        "供应商",
+        "门户"
+      ]
+    },
+    {
+      "id": 20,
+      "question": "存货核算怎么操作？",
+      "expected_files": [
+        "存货核算"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "存货",
+        "核算",
+        "出入库"
+      ]
+    },
+    {
+      "id": 21,
+      "question": "存货核算如何初始化？",
+      "expected_files": [
+        "存货核算初始化"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "初始化",
+        "期初",
+        "存货"
+      ]
+    },
+    {
+      "id": 22,
+      "question": "产品成本如何核算？",
+      "expected_files": [
+        "产品成本核算"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "成本",
+        "核算",
+        "产品"
+      ]
+    },
+    {
+      "id": 23,
+      "question": "成本调整单怎么用？",
+      "expected_files": [
+        "成本调整单"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "成本",
+        "调整",
+        "单据"
+      ]
+    },
+    {
+      "id": 24,
+      "question": "存货收发存汇总表怎么看？",
+      "expected_files": [
+        "存货收发存汇总表"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "收发存",
+        "汇总",
+        "期初"
+      ]
+    },
+    {
+      "id": 25,
+      "question": "定时核算怎么设置？",
+      "expected_files": [
+        "定时核算"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "定时",
+        "核算",
+        "任务"
+      ]
+    },
+    {
+      "id": 26,
+      "question": "单位换算怎么处理？",
+      "expected_files": [
+        "单位换算"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "单位",
+        "换算",
+        "换算率"
+      ]
+    },
+    {
+      "id": 27,
+      "question": "车间管理有哪些功能？",
+      "expected_files": [
+        "车间管理"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "车间",
+        "工序",
+        "生产"
+      ]
+    },
+    {
+      "id": 28,
+      "question": "产品如何管理？",
+      "expected_files": [
+        "产品管理"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "产品",
+        "物料",
+        "编码"
+      ]
+    },
+    {
+      "id": 29,
+      "question": "超级BOM怎么管理？",
+      "expected_files": [
+        "超级bom管理"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "BOM",
+        "物料",
+        "清单"
+      ]
+    },
+    {
+      "id": 30,
+      "question": "BOS平台是什么？",
+      "expected_files": [
+        "bos平台"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "BOS",
+        "平台",
+        "扩展"
+      ]
+    },
+    {
+      "id": 31,
+      "question": "单据转换规则怎么配置？",
+      "expected_files": [
+        "单据转换规则"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "转换",
+        "规则",
+        "单据"
+      ]
+    },
+    {
+      "id": 32,
+      "question": "工作流如何配置？",
+      "expected_files": [
+        "工作流"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "流程",
+        "审批",
+        "节点"
+      ]
+    },
+    {
+      "id": 33,
+      "question": "下推和特定下推有什么区别？",
+      "expected_files": [
+        "下推"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "下推",
+        "生成",
+        "单据"
+      ]
+    },
+    {
+      "id": 34,
+      "question": "促销活动怎么管理？",
+      "expected_files": [
+        "促销管理"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "促销",
+        "活动",
+        "价格"
+      ]
+    },
+    {
+      "id": 35,
+      "question": "返利怎么管理？",
+      "expected_files": [
+        "返利管理"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "返利",
+        "计算",
+        "客户"
+      ]
+    },
+    {
+      "id": 36,
+      "question": "菜谱怎么综合管理？",
+      "expected_files": [
+        "菜谱综合管理"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "菜谱",
+        "菜品",
+        "成本"
+      ]
+    },
+    {
+      "id": 37,
+      "question": "团餐怎么管理？",
+      "expected_files": [
+        "餐饮团餐管理"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "团餐",
+        "订餐",
+        "餐饮"
+      ]
+    },
+    {
+      "id": 38,
+      "question": "电子凭证池是什么？",
+      "expected_files": [
+        "电子凭证池"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "凭证",
+        "电子",
+        "发票"
+      ]
+    },
+    {
+      "id": 39,
+      "question": "报表基本操作怎么做？",
+      "expected_files": [
+        "报表基本操作"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "报表",
+        "查询",
+        "导出"
+      ]
+    },
+    {
+      "id": 40,
+      "question": "固定资产期末怎么处理？",
+      "expected_files": [
+        "固定资产期末处理"
+      ],
+      "should_answer": true,
+      "expected_keywords": [
+        "期末",
+        "折旧",
+        "计提"
+      ]
+    },
+    {
+      "id": 41,
+      "question": "怎么用 Python 写一个网络爬虫？",
+      "expected_files": [],
+      "should_answer": false,
+      "expected_keywords": []
+    },
+    {
+      "id": 42,
+      "question": "今天北京天气怎么样？",
+      "expected_files": [],
+      "should_answer": false,
+      "expected_keywords": []
+    },
+    {
+      "id": 43,
+      "question": "如何重装 Windows 操作系统？",
+      "expected_files": [],
+      "should_answer": false,
+      "expected_keywords": []
+    },
+    {
+      "id": 44,
+      "question": "推荐几款好玩的游戏",
+      "expected_files": [],
+      "should_answer": false,
+      "expected_keywords": []
+    },
+    {
+      "id": 45,
+      "question": "红烧肉怎么做才好吃？",
+      "expected_files": [],
+      "should_answer": false,
+      "expected_keywords": []
+    }
+  ]
+}

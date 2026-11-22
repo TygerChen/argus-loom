@@ -26,7 +26,9 @@ public record AskQuestionResponse(
         List<Citation> citations,
         EvidenceOverview evidenceOverview,
         /** 持久化后的 QA 问答记录 ID，保存失败时为空。 */
-        Long recordId
+        Long recordId,
+        /** 所属多轮会话 ID，单轮模式或会话创建失败时为空。 */
+        Long conversationId
 ) {
 
     public AskQuestionResponse(
@@ -37,7 +39,7 @@ public record AskQuestionResponse(
             List<Citation> citations,
             Long recordId
     ) {
-        this(answered, answer, reasonCode, reasonMessage, citations, null, recordId);
+        this(answered, answer, reasonCode, reasonMessage, citations, null, recordId, null);
     }
 
     /**
@@ -48,7 +50,7 @@ public record AskQuestionResponse(
      * @return 已回答的响应对象
      */
     public static AskQuestionResponse answered(String answer, List<Citation> citations) {
-        return new AskQuestionResponse(true, answer, null, null, citations, null, null);
+        return new AskQuestionResponse(true, answer, null, null, citations, null, null, null);
     }
 
     /**
@@ -64,17 +66,22 @@ public record AskQuestionResponse(
             String reasonMessage,
             List<Citation> citations
     ) {
-        return new AskQuestionResponse(false, null, reasonCode, reasonMessage, citations, null, null);
+        return new AskQuestionResponse(false, null, reasonCode, reasonMessage, citations, null, null, null);
     }
 
     /** 返回一份带持久化记录 ID 的响应对象。 */
     public AskQuestionResponse withRecordId(Long recordId) {
-        return new AskQuestionResponse(answered, answer, reasonCode, reasonMessage, citations, evidenceOverview, recordId);
+        return new AskQuestionResponse(answered, answer, reasonCode, reasonMessage, citations, evidenceOverview, recordId, conversationId);
+    }
+
+    /** 返回一份带多轮会话 ID 的响应对象。 */
+    public AskQuestionResponse withConversationId(Long conversationId) {
+        return new AskQuestionResponse(answered, answer, reasonCode, reasonMessage, citations, evidenceOverview, recordId, conversationId);
     }
 
     /** 返回一份带证据覆盖概览的响应对象。 */
     public AskQuestionResponse withEvidenceOverview(EvidenceOverview evidenceOverview) {
-        return new AskQuestionResponse(answered, answer, reasonCode, reasonMessage, citations, evidenceOverview, recordId);
+        return new AskQuestionResponse(answered, answer, reasonCode, reasonMessage, citations, evidenceOverview, recordId, conversationId);
     }
 
     /**

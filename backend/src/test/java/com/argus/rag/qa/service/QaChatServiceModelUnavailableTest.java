@@ -41,6 +41,10 @@ import static org.mockito.Mockito.when;
 @DisplayName("QA 同步路径模型不可用归一化")
 class QaChatServiceModelUnavailableTest {
 
+    /** BYOK 解析器：单测里默认无用户配置 → 回落全局客户端 */
+    private final com.argus.rag.settings.UserChatModelService userChatModelService =
+            org.mockito.Mockito.mock(com.argus.rag.settings.UserChatModelService.class);
+
     @Mock
     private ChatClient chatClient;
     @Mock
@@ -58,13 +62,17 @@ class QaChatServiceModelUnavailableTest {
         return new QaChatService(
                 chatClient, promptTemplate, documentRetriever, answerParser,
                 citationAssembler, evidenceOverviewAssembler, new ObjectMapper(),
-                new LlmDialogueMetrics(new SimpleMeterRegistry()));
+                new LlmDialogueMetrics(new SimpleMeterRegistry()),
+                userChatModelService,
+                org.mockito.Mockito.mock(com.argus.rag.qa.rag.RetrievalRelevanceReflector.class));
     }
 
     @Test
     @DisplayName("LLM 调用异常应抛 MODEL_UNAVAILABLE（而非误标格式错误）")
     void modelCallFailureShouldThrowModelUnavailableCode() {
         RetrievedEvidenceBundle bundle = evidenceWith(EvidenceLevel.SUFFICIENT);
+        // BYOK 解析器回落：mock 默认返回 null，这里显式指回全局 mock client
+        when(userChatModelService.chatClientForCurrentUser(any())).thenReturn(chatClient);
         when(documentRetriever.retrieveEvidence(1L, "q")).thenReturn(bundle);
         when(promptTemplate.create(any(java.util.Map.class)))
                 .thenReturn(new org.springframework.ai.chat.prompt.Prompt("q"));

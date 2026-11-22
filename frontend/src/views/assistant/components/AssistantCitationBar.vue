@@ -205,7 +205,7 @@ const grouped = computed(() => {
   gap: 8px;
   max-width: 100%;
   padding: 5px 10px 5px 8px;
-  background: #fff;
+  background: var(--surface-white);
   border: 1px solid var(--border-default);
   border-radius: 100px;
   font-family: inherit;

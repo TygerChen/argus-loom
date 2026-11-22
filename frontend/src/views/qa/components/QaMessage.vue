@@ -5,12 +5,13 @@
  * "这个回答看了哪些资料"完整展示给用户——04 篇"可解释性"的 UI 落点。
  * 点赞/点踩事件向上抛给会话容器调后端评分接口。
  */
-import { computed } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import type { QaMessage } from '../composables/useQaSessions'
 import type { CitationItem, QaRating } from '@/api/qa'
 import CitationRail from './CitationRail.vue'
 import EvidenceOverviewPanel from './EvidenceOverviewPanel.vue'
 import { renderSafeMarkdown } from '@/utils/safeMarkdown'
+import { enhanceCodeBlocks, normalizeFences } from '@/utils/codeBlock'
 
 const props = defineProps<{
   message: QaMessage
@@ -21,11 +22,23 @@ const emit = defineEmits<{
   rate: [{ recordId: number; rating: QaRating }]
 }>()
 
+const mdRef = ref<HTMLElement | null>(null)
+
+watch(
+  () => props.message.content,
+  async () => {
+    await nextTick()
+    enhanceCodeBlocks(mdRef.value)
+  },
+  { immediate: true },
+)
+
 const rendered = computed(() => {
   if (props.message.role === 'user') {
     return ''
   }
-  return renderSafeMarkdown(props.message.content || '')
+  // 与助手页同口径：先规整 LLM 输出的非行首围栏，再消毒渲染
+  return renderSafeMarkdown(normalizeFences(props.message.content || ''))
 })
 
 function formatTime(ts: number): string {
@@ -73,7 +86,7 @@ function formatTime(ts: number): string {
 
       <!-- Assistant streaming content -->
       <div v-else-if="message.pending" class="qa-msg__streaming">
-        <div class="qa-msg__markdown" v-html="rendered" />
+        <div ref="mdRef" class="qa-msg__markdown" v-html="rendered" />
         <span class="qa-msg__cursor" />
       </div>
 
@@ -257,7 +270,7 @@ function formatTime(ts: number): string {
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
-  background: #fff;
+  background: var(--surface-white);
   border: 1px solid var(--border-default);
   border-radius: 100px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
@@ -392,7 +405,7 @@ function formatTime(ts: number): string {
 }
 .qa-msg__feedback-btn--active {
   border-color: #3b82f6;
-  background: #eff6ff;
+  background: color-mix(in srgb, var(--brand-primary) 8%, var(--surface-white));
 }
 .qa-msg__feedback-btn:disabled {
   cursor: default;

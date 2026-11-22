@@ -241,6 +241,33 @@ export interface AssistantChatResult {
   routeStrategy?: KbRouteStrategy
   /** 回复中引用的文档片段列表（可能为空数组） */
   citations: AssistantCitationItem[]
+  /** 待确认写提案（第十一步确认门；null=本次对话无写操作） */
+  pendingProposal?: PendingProposal | null
+}
+
+/**
+ * 待确认写提案（第十一步确认门）
+ *
+ * 模型请求写操作（如更新任务进度）时，运行器不直接执行，而是生成一份提案
+ * 随回复下发。用户在界面上点「确认」后，系统才按提案快照执行写。
+ */
+export interface PendingProposal {
+  /** 提案号（确认/取消 API 的路径参数，兼幂等键） */
+  proposalId: string
+  /** 来源写工具 */
+  toolName: string
+  /** 改动摘要（"将任务「X」状态改为「已完成」"） */
+  summary: string
+  /** 目标文档 ID */
+  documentId: number
+  /** 目标文档名 */
+  documentName: string
+  /** 发起会话 */
+  sessionId: number
+  /** 状态：REGISTERED（待确认）/ EXECUTED / CANCELLED */
+  status: string
+  /** 过期时间戳（毫秒） */
+  expiresAt: number
 }
 
 // ─────────────────────────────────────────────
@@ -285,4 +312,6 @@ export interface AssistantChatStreamEvent {
   citations: AssistantCitationItem[]
   /** 错误信息（仅 error 事件有值） */
   error: string | null
+  /** 待确认写提案（仅 done 事件有值；null=无写操作） */
+  pendingProposal?: PendingProposal | null
 }

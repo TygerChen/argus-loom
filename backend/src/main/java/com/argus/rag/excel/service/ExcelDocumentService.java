@@ -163,29 +163,32 @@ public class ExcelDocumentService {
         if (ids == null || ids.isEmpty()) throw new BusinessException("ids 不能为空");
         List<Long> successIds = new ArrayList<>();
         List<Map<String, Object>> rejected = new ArrayList<>();
+        // 一次 IN 查询替代逐条 selectById（消除 N+1）
+        Map<Long, ExcelDocument> existingById = new LinkedHashMap<>();
+        for (ExcelDocument doc : documentMapper.selectBatchIds(ids)) {
+            existingById.put(doc.getId(), doc);
+        }
         for (Long id : ids) {
-            try {
-                ExcelDocument exist = documentMapper.selectById(id);
-                if (exist == null || Integer.valueOf(3).equals(exist.getStatus())) {
-                    rejected.add(reject(id, "文档不存在或已永久删除"));
-                    continue;
-                }
-                if (Integer.valueOf(2).equals(exist.getStatus())) {
-                    rejected.add(reject(id, "文档已在回收站中"));
-                    continue;
-                }
-                ExcelDocument update = new ExcelDocument();
-                update.setId(id);
-                update.setVersion(exist.getVersion());
-                update.setStatus(2);
-                update.setDeletedBy(operator);
-                update.setDeletedAt(LocalDateTime.now());
-                update.setUpdateTime(LocalDateTime.now());
-                documentMapper.updateById(update);
-                successIds.add(id);
-            } catch (Exception e) {
-                rejected.add(reject(id, e.getMessage() == null ? "移入回收站失败" : e.getMessage()));
+            ExcelDocument exist = existingById.get(id);
+            if (exist == null || Integer.valueOf(3).equals(exist.getStatus())) {
+                rejected.add(reject(id, "文档不存在或已永久删除"));
+                continue;
             }
+            if (Integer.valueOf(2).equals(exist.getStatus())) {
+                rejected.add(reject(id, "文档已在回收站中"));
+                continue;
+            }
+            successIds.add(id);
+        }
+        if (!successIds.isEmpty()) {
+            // 一次批量更新替代逐条 updateById
+            LambdaUpdateWrapper<ExcelDocument> uw = new LambdaUpdateWrapper<>();
+            uw.in(ExcelDocument::getId, successIds)
+                    .set(ExcelDocument::getStatus, 2)
+                    .set(ExcelDocument::getDeletedBy, operator)
+                    .set(ExcelDocument::getDeletedAt, LocalDateTime.now())
+                    .set(ExcelDocument::getUpdateTime, LocalDateTime.now());
+            documentMapper.update(null, uw);
         }
         return operationResult(ids, successIds, rejected);
     }

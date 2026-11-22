@@ -176,14 +176,14 @@ const statusValue = computed({
 
 .filters-bar__select:focus,
 .filters-bar__input:focus {
-  background: #fff;
+  background: var(--surface-white);
   border-color: var(--brand-primary);
   box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.1);
 }
 
 .filters-bar__select:hover:not(:disabled),
 .filters-bar__input:hover {
-  background: #fff;
+  background: var(--surface-white);
   border-color: var(--border-default);
 }
 

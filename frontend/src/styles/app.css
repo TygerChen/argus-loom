@@ -36,13 +36,15 @@ textarea {
 
 .dl-page {
   min-height: 100vh;
+  /* 两层渐变全部 token 化：浅色下是米白+细网格，暗色下由 --dl-* 对应值接管 */
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(243, 245, 240, 0.92)),
-    repeating-linear-gradient(90deg, rgba(47, 125, 87, 0.06) 0 1px, transparent 1px 84px);
+    linear-gradient(180deg, color-mix(in srgb, var(--dl-panel) 76%, transparent), color-mix(in srgb, var(--dl-bg) 92%, transparent)),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--dl-accent) 6%, transparent) 0 1px, transparent 1px 84px);
 }
 
 .dl-shell {
-  width: min(1180px, calc(100% - 40px));
+  /* 数据密集页（文档表/财务台账）列宽需求 1328px+：壳层放宽到 1520，避免表格被压扁 */
+  width: min(1520px, calc(100% - 40px));
   margin: 0 auto;
 }
 
@@ -60,5 +62,5 @@ textarea {
 }
 
 .el-table {
-  --el-table-header-bg-color: #f7f8f5;
+  --el-table-header-bg-color: var(--surface-subtle);
 }

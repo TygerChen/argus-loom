@@ -1,6 +1,7 @@
 package com.argus.rag.engine.freeweb;
 
 import jakarta.annotation.PreDestroy;
+import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -259,11 +260,8 @@ public class FreeWebSearchService {
                 return "";
             }
             log.info("页面抓取开始: url={}", url);
-            Document doc = Jsoup.connect(url)
-                    .userAgent(USER_AGENT)
-                    .header("Accept-Language", "zh-CN,zh;q=0.9")
-                    .timeout((int) TimeUnit.SECONDS.toMillis(Math.max(1, timeoutSeconds)))
-                    .get();
+            // SSRF 重定向复检：关闭 Jsoup 自动跟随，手动逐跳校验重定向目标仍为公网（防重定向到内网/元数据服务）
+            Document doc = fetchWithRedirectGuard(url, target, timeoutSeconds);
 
             // 移除脚本、样式、导航、页脚等噪音元素
             doc.select("script, style, nav, footer, header, aside, iframe, noscript, .ad, .advertisement").remove();
@@ -289,6 +287,41 @@ public class FreeWebSearchService {
             log.warn("页面抓取失败: url={}, error={}", url, e.getMessage());
             return "";
         }
+    }
+
+    /**
+     * 抓取并逐跳校验重定向目标：每跳目标都必须重新通过 {@link SafeRemoteUrlPolicy}（公网校验），
+     * 防止公网 URL 重定向到内网/云元数据服务。超过 {@code maxRedirects} 或任一跳非法即放弃。
+     */
+    private Document fetchWithRedirectGuard(String url, URI target, int timeoutSeconds) throws java.io.IOException {
+        int timeoutMillis = (int) TimeUnit.SECONDS.toMillis(Math.max(1, timeoutSeconds));
+        Connection.Response response = Jsoup.connect(url)
+                .userAgent(USER_AGENT)
+                .header("Accept-Language", "zh-CN,zh;q=0.9")
+                .timeout(timeoutMillis)
+                .followRedirects(false)
+                .execute();
+        final int maxRedirects = 5;
+        for (int hop = 0; hop < maxRedirects; hop++) {
+            int status = response.statusCode();
+            if (status < 300 || status >= 400 || !response.hasHeader("Location")) {
+                return response.parse();
+            }
+            URI resolved = target.resolve(response.header("Location"));
+            if (!SafeRemoteUrlPolicy.isAllowed(resolved)) {
+                log.warn("页面抓取重定向到非公网地址被拒绝: {} -> {}", url, resolved);
+                throw new java.io.IOException("重定向目标非公网地址");
+            }
+            target = resolved;
+            response = Jsoup.connect(target.toString())
+                    .userAgent(USER_AGENT)
+                    .header("Accept-Language", "zh-CN,zh;q=0.9")
+                    .timeout(timeoutMillis)
+                    .followRedirects(false)
+                    .execute();
+        }
+        log.warn("页面抓取重定向次数超限: url={}", url);
+        throw new java.io.IOException("重定向次数超限");
     }
 
     /** 包内静态，供 JVM 行为测试调用。 */

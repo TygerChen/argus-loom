@@ -77,7 +77,11 @@ html {
 }
 
 body {
-  font-family: 'Open Sans', 'Noto Sans SC', system-ui, -apple-system, sans-serif;
+  /* 系统字体栈：PingFang/HarmonyOS/雅黑 UI 优先——中文渲染比网络字体更锐利，
+     且不依赖 Google Fonts（国内加载不稳）；数字统一 tabular-nums，统计卡片对齐不跳动 */
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'HarmonyOS Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  font-variant-numeric: tabular-nums;
   background: var(--surface-white);
   color: var(--text-primary);
   line-height: 1.6;
@@ -174,36 +178,62 @@ img, svg { display: block; max-width: 100%; }
 }
 
 /* ═══════════════════════════════════════
-   Dark mode tokens
+   Dark mode tokens — 手动 opt-in
+   ═══════════════════════════════════════
+   曾用 @media (prefers-color-scheme: dark) 自动翻转，但布局外壳与大量组件
+   写死浅色（#fff / #fbfaf6），系统深色模式下会出现"半明半暗"的割裂观感。
+   现改为 html.theme-dark 手动挂载（未来做主题开关时直接加类即可）；
+   同时用 color-scheme: light 让原生控件（滚动条/输入框）与浅色主题一致。 */
+html {
+  color-scheme: light;
+}
+
+html.theme-dark {
+  --surface-white: #0f172a;
+  --surface-subtle: #1e293b;
+  --surface-muted: #334155;
+  --surface-accent: #1a2744;
+  --surface-footer: #020617;
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-on-dark: #f1f5f9;
+  --text-on-dark-muted: #94a3b8;
+
+  --border-default: #334155;
+  --border-subtle: #1e293b;
+  --border-on-dark: rgba(255, 255, 255, 0.06);
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 10px 28px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 20px 48px rgba(0, 0, 0, 0.5);
+
+  --el-color-primary-light-9: #1a2744;
+  --el-color-primary-light-8: #1e3a5f;
+  --el-color-primary-light-7: #234d7a;
+
+  /* Excel/财务页的暖色系（app.css --dl-*）在暗色下的对应值 */
+  --dl-bg: #0b1220;
+  --dl-panel: #111b2e;
+  --dl-ink: #e2e8f0;
+  --dl-muted: #8fa3b8;
+  --dl-line: #24334d;
+  --dl-accent: #3fcf8e;
+  --dl-accent-strong: #7ee2b8;
+  --dl-warm: #f5a623;
+  --dl-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+}
+
+/* ═══════════════════════════════════════
+   Keyboard focus ring（可访问性：键盘导航可见）
    ═══════════════════════════════════════ */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --surface-white: #0f172a;
-    --surface-subtle: #1e293b;
-    --surface-muted: #334155;
-    --surface-accent: #1a2744;
-    --surface-footer: #020617;
-
-    --text-primary: #f1f5f9;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
-    --text-on-dark: #f1f5f9;
-    --text-on-dark-muted: #94a3b8;
-
-    --border-default: #334155;
-    --border-subtle: #1e293b;
-    --border-on-dark: rgba(255, 255, 255, 0.06);
-
-    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
-    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
-    --shadow-lg: 0 10px 28px rgba(0, 0, 0, 0.4);
-    --shadow-xl: 0 20px 48px rgba(0, 0, 0, 0.5);
-
-    --el-color-primary-light-9: #1a2744;
-    --el-color-primary-light-8: #1e3a5f;
-    --el-color-primary-light-7: #234d7a;
-  }
+:focus-visible {
+  outline: 2px solid rgba(74, 144, 217, 0.55);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 /* ═══════════════════════════════════════
@@ -292,3 +322,64 @@ img, svg { display: block; max-width: 100%; }
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+
+/* ═══════════════════════════════════════
+   代码块顶栏（语言标签 + 复制按钮）
+   由 utils/codeBlock.ts 在运行时包壳动态创建；
+   动态元素没有 scoped data-v 属性，样式必须放全局。
+   ═══════════════════════════════════════ */
+.code-shell {
+  position: relative;
+  margin: 12px 0;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.15);
+}
+
+.code-shell .code-shell__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: #1e293b;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+}
+
+.code-shell .code-shell__lang {
+  color: #94a3b8;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.code-shell .code-shell__copy {
+  padding: 2px 10px;
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.code-shell .code-shell__copy:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* 包壳后接管原 pre 的外边距与圆角，避免双重圆角/外阴影 */
+.code-shell pre {
+  margin: 0;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+}
+
+/* ═══════════════════════════════════════
+   Keyboard focus ring（可访问性：键盘导航可见）
+   ═══════════════════════════════════════ */

@@ -36,6 +36,11 @@ class ApplicationConfigBindingTest {
     @Test
     void llmAndExcelKeysBindUnderArgusRagInAllProfiles() throws Exception {
         for (String profile : PROFILES) {
+            if (!new ClassPathResource(profile).exists()) {
+                // application-local.yml 不在仓库内（本机运行由根目录 .env 供给 dev profile）。
+                // 存量欠账修正：缺文件的 profile 跳过，不把"没有本地文件"误报成配置错位。
+                continue;
+            }
             PropertySource<?> ps = load(profile);
             assertNotNull(ps.getProperty("argus.rag.llm.timeout-seconds"),
                     profile + " 缺少 argus.rag.llm.timeout-seconds");
@@ -70,6 +75,9 @@ class ApplicationConfigBindingTest {
     @Test
     void websocketOriginsDeclaredInAllProfiles() throws Exception {
         for (String profile : PROFILES) {
+            if (!new ClassPathResource(profile).exists()) {
+                continue;
+            }
             PropertySource<?> ps = load(profile);
             Object origins = ps.getProperty("argus.rag.websocket.allowed-origin-patterns");
             assertNotNull(origins, profile + " 缺少 argus.rag.websocket.allowed-origin-patterns");

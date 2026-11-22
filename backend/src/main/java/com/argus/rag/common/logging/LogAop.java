@@ -67,11 +67,13 @@ public class LogAop {
         }
     }
 
-    /** 命中即视为敏感字段，入参日志一律以掩码输出，避免明文落盘。 */
+    /** 命中即视为敏感字段（大小写不敏感、按子串匹配），入参日志一律掩码，避免明文落盘。 */
     private static final Set<String> SENSITIVE_KEYS = Set.of(
-            "password", "pwd", "passwd",
-            "oldPassword", "newPassword",
-            "accessToken", "refreshToken", "token", "secret", "credential");
+            "password", "pwd", "passwd", "secret", "credential", "token");
+
+    /** 用户/模型原文类字段（问答正文等），只打印长度不打印内容——遵循"日志不存原文"约定。 */
+    private static final Set<String> CONTENT_KEYS = Set.of(
+            "message", "question", "content", "prompt", "answer", "text");
 
     /** 单个入参值超过此长度即截断，防止长内容刷屏。 */
     private static final int MAX_VALUE_LEN = 120;
@@ -100,13 +102,22 @@ public class LogAop {
                 .map(method -> {
                     String name = method.getName();
                     Object value = readValue(method, arg);
-                    if (SENSITIVE_KEYS.contains(name)) {
+                    if (isSensitive(name)) {
                         return name + "=******";
+                    }
+                    if (CONTENT_KEYS.contains(name)) {
+                        return name + "=<" + (value == null ? "null" : String.valueOf(value).length()) + " chars>";
                     }
                     return name + "=" + cap(String.valueOf(value));
                 })
                 .collect(Collectors.joining(", "));
         return type.getSimpleName() + "[" + fields + "]";
+    }
+
+    /** 字段名是否敏感：大小写不敏感、按子串命中（currentPassword/newPassword/accessToken 等变体全覆盖）。 */
+    private static boolean isSensitive(String fieldName) {
+        String lower = fieldName.toLowerCase();
+        return SENSITIVE_KEYS.stream().anyMatch(lower::contains);
     }
 
     private Object readValue(Method method, Object record) {

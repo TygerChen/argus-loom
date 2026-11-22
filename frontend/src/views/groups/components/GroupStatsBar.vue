@@ -135,7 +135,7 @@ const emit = defineEmits<{
 
 .stats-bar__card.is-active {
   border-color: var(--brand-primary);
-  background: #f8fafc;
+  background: var(--surface-subtle);
   box-shadow: 0 0 0 1px var(--brand-primary);
 }
 

@@ -100,6 +100,8 @@ public class StructuredDataQueryTool {
             @ToolParam(description = "文档 ID，指定要查询哪个 Excel 文件。不确定时可不传，系统会列出当前账号可检索的文档。",
                        required = false) Long documentId,
             ToolContext toolContext) {
+        // 第六步（调用工具）：执行门禁
+        ToolExecutionGuard.check(toolContext, "query_structured_data");
         Map<String, Object> queryIntent = new LinkedHashMap<>();
         queryIntent.put("column", column);
         queryIntent.put("operator", operator != null ? operator : "eq");
@@ -210,8 +212,10 @@ public class StructuredDataQueryTool {
           description = "获取 Excel 文档的表格结构信息（有哪些 Sheet、每个 Sheet 有哪些列、各列的数据类型和示例值）。" +
                         "在对表格数据进行查询之前，通常应先调用此工具了解表格结构。")
     public String getTableSchema(
-            @ToolParam(description = "文档 ID", required = true) Long documentId) {
+            @ToolParam(description = "文档 ID", required = true) Long documentId,
+            ToolContext toolContext) {
         log.info("Agent 请求表格 Schema: documentId={}", documentId);
+        ToolExecutionGuard.check(toolContext, "get_table_schema");
         requireStructuredDataReadable(documentId);
         String schema = retrievalService.buildStructuredContext(documentId);
         if (schema.isEmpty()) {
@@ -232,8 +236,10 @@ public class StructuredDataQueryTool {
                         "当你不知道具体应该查哪一列时使用此工具。")
     public String searchTableData(
             @ToolParam(description = "搜索关键词", required = true) String keyword,
-            @ToolParam(description = "文档 ID", required = true) Long documentId) {
+            @ToolParam(description = "文档 ID", required = true) Long documentId,
+            ToolContext toolContext) {
         log.info("Agent 表格数据搜索: keyword={}, documentId={}", keyword, documentId);
+        ToolExecutionGuard.check(toolContext, "search_table_data");
         requireStructuredDataReadable(documentId);
         List<Map<String, Object>> results = retrievalService.fuzzySearch(documentId, keyword);
 

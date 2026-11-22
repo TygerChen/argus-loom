@@ -246,7 +246,7 @@ export function createUniverWorkbookAdapter({ documentId, documentName, metas, c
         }
       }
 
-      for (const [key, baseline] of baselineCells) {
+      for (const [key] of baselineCells) {
         if (!key.startsWith(prefix)) continue
         const relativeKey = key.slice(prefix.length)
         if (presentKeys.has(relativeKey)) continue
@@ -335,7 +335,7 @@ export function createUniverWorkbookAdapter({ documentId, documentName, metas, c
 
     clearRevisionStates(sheetIds) {
       const prefixes = (sheetIds || []).map((id) => `${id}:`)
-      for (const key of [...serverRevisions.keys()]) {
+      for (const key of serverRevisions.keys()) {
         if (prefixes.some((prefix) => key.startsWith(prefix))) {
           serverRevisions.delete(key)
         }
@@ -810,7 +810,7 @@ function applyStyleToLucky(output, style, cell) {
 
   if (style.n?.pattern) {
     const oldType = output.ct?.t || 'n'
-    output.ct = { ...(output.ct || {}), t: output.ct?.t || oldType, fa: style.n.pattern }
+    output.ct = { ...output.ct, t: output.ct?.t || oldType, fa: style.n.pattern }
   }
   if (style.bg !== undefined && style.bg !== null) output.bg = exposeColor(style.bg)
   if (style.ff !== undefined) output.ff = String(style.ff)

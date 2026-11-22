@@ -7,7 +7,7 @@ up to JSON files next to this script before the matching tables are refilled.
 
 Usage:
   python migrate_mysql_to_pg.py
-  python migrate_mysql_to_pg.py --mysql-pass YCT412825 --pg-pass yct412825
+  python migrate_mysql_to_pg.py --mysql-pass YOUR_MYSQL_PASSWORD --pg-pass YOUR_PG_PASSWORD
 """
 
 import argparse
@@ -177,12 +177,12 @@ def main():
     parser.add_argument("--mysql-host", default="127.0.0.1")
     parser.add_argument("--mysql-port", type=int, default=3306)
     parser.add_argument("--mysql-user", default="root")
-    parser.add_argument("--mysql-password", default="YCT412825")
+    parser.add_argument("--mysql-password", default="")
     parser.add_argument("--mysql-db", default="dataloom")
     parser.add_argument("--pg-host", default="localhost")
     parser.add_argument("--pg-port", type=int, default=5432)
     parser.add_argument("--pg-user", default="postgres")
-    parser.add_argument("--pg-password", default="yct412825")
+    parser.add_argument("--pg-password", default="")
     parser.add_argument("--pg-db", default="argus_rag")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()

@@ -67,6 +67,10 @@ class AssistantServiceTest {
     private ObjectMapper objectMapper;
     private LlmUsageCollector usageCollector;
     private LlmCostCalculator costCalculator;
+    private com.argus.rag.understanding.TaskUnderstandingService taskUnderstandingService;
+    private com.argus.rag.planning.TaskPlanningService taskPlanningService;
+    private com.argus.rag.verify.AnswerVerifier answerVerifier;
+    private com.argus.rag.assistant.trace.TaskTraceRecorder taskTraceRecorder;
     private HttpServletRequest request;
     private AssistantStreamEventEmitter emitter;
     private AssistantService svc;
@@ -81,11 +85,31 @@ class AssistantServiceTest {
         objectMapper = new ObjectMapper();
         usageCollector = mock(LlmUsageCollector.class);
         costCalculator = mock(LlmCostCalculator.class);
+        taskUnderstandingService = mock(com.argus.rag.understanding.TaskUnderstandingService.class);
+        taskPlanningService = mock(com.argus.rag.planning.TaskPlanningService.class);
+        answerVerifier = mock(com.argus.rag.verify.AnswerVerifier.class);
+        taskTraceRecorder = mock(com.argus.rag.assistant.trace.TaskTraceRecorder.class);
+        when(answerVerifier.verify(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyList())).thenReturn(
+                com.argus.rag.verify.VerificationResult.empty());
+        when(answerVerifier.annotate(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any())).thenAnswer(inv -> inv.getArgument(0));
+        when(taskPlanningService.plan(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(
+                com.argus.rag.planning.ExecutionPlan.fallback("测试目标", false, "查报表", false));
+        when(taskUnderstandingService.understand(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(
+                com.argus.rag.understanding.TaskUnderstanding.empty());
         request = mock(HttpServletRequest.class);
         emitter = mock(AssistantStreamEventEmitter.class);
         svc = new AssistantService(
                 conversationService, agentFacade, membershipService, currentUserService,
-                router, objectMapper, usageCollector, costCalculator);
+                router, objectMapper, usageCollector, costCalculator, taskUnderstandingService,
+                taskPlanningService, answerVerifier, taskTraceRecorder);
         when(currentUserService.requireBusinessUser()).thenReturn(
                 new CurrentUserService.CurrentUser(7L, "u7", "显示名"));
         when(costCalculator.calculate(anyString(), anyInt(), anyInt()))
@@ -110,7 +134,7 @@ class AssistantServiceTest {
     }
 
     private void stubAgentOk(String reply) {
-        when(agentFacade.chat(any(), any(), any(), any(), any(), any()))
+        when(agentFacade.chat(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new AssistantAgentResult(reply, List.of()));
     }
 
@@ -224,7 +248,7 @@ class AssistantServiceTest {
     @Test
     void failureWrappedAsUnavailableAndRecordedAsFailed() {
         stubConversation();
-        when(agentFacade.chat(any(), any(), any(), any(), any(), any()))
+        when(agentFacade.chat(any(), any(), any(), any(), any(), any(), any()))
                 .thenThrow(new RuntimeException("llm down"));
         BusinessException e = assertThrows(BusinessException.class,
                 () -> svc.chat(request, chatReq(AssistantToolMode.CHAT, null, null, null)));
@@ -254,7 +278,7 @@ class AssistantServiceTest {
             deltaConsumer.accept("你");
             deltaConsumer.accept("好");
             return new AssistantAgentResult("你好", List.of());
-        });
+        }, null);
         List<AssistantChatStreamEvent> events = capturedEvents(4);
         assertEquals("start", events.get(0).event());
         assertEquals("delta", events.get(1).event());
@@ -268,14 +292,14 @@ class AssistantServiceTest {
     @Test
     void httpStreamChatDelegatesViaFacadeStreaming() {
         stubConversation();
-        when(agentFacade.streamChat(any(), any(), any(), any(), any(), any(), any(), any()))
+        when(agentFacade.streamChat(any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenAnswer(inv -> {
-                    var dc = (java.util.function.Consumer<String>) inv.getArgument(6);
+                    var dc = (java.util.function.Consumer<String>) inv.getArgument(7);
                     dc.accept("片段");
                     return new AssistantAgentResult("片段", List.of());
                 });
         svc.streamChat(request, chatReq(AssistantToolMode.CHAT, null, null, null), emitter);
-        verify(agentFacade).streamChat(any(), any(), any(), any(), any(), any(), any(), any());
+        verify(agentFacade).streamChat(any(), any(), any(), any(), any(), any(), any(), any(), any());
         List<AssistantChatStreamEvent> events = capturedEvents(3);
         assertEquals("start", events.get(0).event());
         assertEquals("delta", events.get(1).event());
@@ -289,7 +313,7 @@ class AssistantServiceTest {
         BusinessException e = assertThrows(BusinessException.class,
                 () -> svc.streamChat(req, emitter, deltaConsumer -> {
                     throw new RuntimeException("stream boom");
-                }));
+                }, null));
         assertEquals(ErrorCodes.MODEL_UNAVAILABLE, e.getCode());
         LlmUsageRecordDTO rec = lastRecord();
         assertEquals(Boolean.FALSE, rec.getSuccess());

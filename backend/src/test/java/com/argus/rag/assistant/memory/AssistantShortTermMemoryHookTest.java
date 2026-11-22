@@ -94,10 +94,11 @@ class AssistantShortTermMemoryHookTest {
         List<Message> msgs = hook.assembleBeforeModelMessages(
                 7L, 9L, AssistantToolMode.CHAT, null, "现在几点");
         assertEquals(5, msgs.size());
-        assertInstanceOf(SystemMessage.class, msgs.get(0));
-        assertTrue(msgs.get(0).getText().contains("紧凑摘要"), "首条应为紧凑摘要系统消息");
-        assertInstanceOf(SystemMessage.class, msgs.get(1));
-        assertTrue(msgs.get(1).getText().contains("会话记忆"), "次条应为会话记忆系统消息");
+        // 零 System 策略：记忆块用带标签的 UserMessage 而非 SystemMessage（AMD 等严格网关兼容）
+        assertInstanceOf(UserMessage.class, msgs.get(0));
+        assertTrue(msgs.get(0).getText().contains("紧凑摘要"), "首条应为紧凑摘要用户消息");
+        assertInstanceOf(UserMessage.class, msgs.get(1));
+        assertTrue(msgs.get(1).getText().contains("会话记忆"), "次条应为会话记忆用户消息");
         assertInstanceOf(UserMessage.class, msgs.get(2));
         assertTrue(msgs.get(2).getText().contains("历史问题"), "第三条应为最近 USER 消息");
         assertInstanceOf(AssistantMessage.class, msgs.get(3));

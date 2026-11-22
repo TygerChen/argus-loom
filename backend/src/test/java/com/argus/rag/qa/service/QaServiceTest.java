@@ -25,6 +25,7 @@ import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -46,17 +47,40 @@ class QaServiceTest {
     private LlmCostCalculator llmCostCalculator;
     @Mock
     private QaRecordPersistenceService qaRecordPersistenceService;
+    @Mock
+    private com.argus.rag.qa.service.QaConversationMemoryService qaConversationMemoryService;
+    @Mock
+    private QaConversationQueryRewriter qaConversationQueryRewriter;
 
     @Test
     @DisplayName("同步问答应持久化记录并返回 recordId")
     void shouldPersistSyncAnswerAndReturnRecordId() {
-        QaService qaService = new QaService(
+        org.mockito.Mockito.when(qaConversationMemoryService.resolveConversation(
+                org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(1L);
+        org.mockito.Mockito.when(qaConversationMemoryService.summaryOf(org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(null);
+        org.mockito.Mockito.when(qaConversationMemoryService.recentTurnsText(org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(null);
+        org.mockito.Mockito.when(qaConversationMemoryService.composeMemoryContext(
+                org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.isNull()))
+                .thenReturn(null);
+                org.mockito.Mockito.when(qaConversationQueryRewriter.rewrite(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> inv.getArgument(0));
+QaService qaService = new QaService(
                 groupMembershipService,
                 qaChatService,
                 currentUserService,
                 llmUsageCollector,
                 llmCostCalculator,
-                qaRecordPersistenceService
+                qaRecordPersistenceService,
+                qaConversationMemoryService,
+                qaConversationQueryRewriter,
+                org.mockito.Mockito.mock(com.argus.rag.assistant.trace.TaskTraceRecorder.class)
         );
         AskQuestionRequest request = new AskQuestionRequest();
         request.setGroupId(1L);
@@ -70,7 +94,7 @@ class QaServiceTest {
 
         when(currentUserService.getRequiredCurrentUser())
                 .thenReturn(new CurrentUserService.CurrentUser(5L, "u001", "Alice", SystemRole.USER, false));
-        when(qaChatService.askWithUsage(1L, "文档上传流程是什么？"))
+        when(qaChatService.askWithUsage(eq(1L), eq("文档上传流程是什么？"), isNull()))
                 .thenReturn(new QaChatService.AskResult(
                         response,
                         new QaChatService.UsageInfo(10, 5, 15, false, 321L),
@@ -99,13 +123,21 @@ class QaServiceTest {
     @Test
     @DisplayName("流式问答完成后应持久化完整回答并回填 recordId")
     void shouldPersistStreamAnswerAndExposeRecordId() {
-        QaService qaService = new QaService(
+                org.mockito.Mockito.when(qaConversationQueryRewriter.rewrite(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> inv.getArgument(0));
+QaService qaService = new QaService(
                 groupMembershipService,
                 qaChatService,
                 currentUserService,
                 llmUsageCollector,
                 llmCostCalculator,
-                qaRecordPersistenceService
+                qaRecordPersistenceService,
+                qaConversationMemoryService,
+                qaConversationQueryRewriter,
+                org.mockito.Mockito.mock(com.argus.rag.assistant.trace.TaskTraceRecorder.class)
         );
         AskQuestionRequest request = new AskQuestionRequest();
         request.setGroupId(1L);
@@ -118,10 +150,10 @@ class QaServiceTest {
 
         when(currentUserService.getRequiredCurrentUser())
                 .thenReturn(new CurrentUserService.CurrentUser(5L, "u001", "Alice", SystemRole.USER, false));
-        when(qaChatService.askStream(eq(1L), eq("How to upload a document?"), any()))
+        when(qaChatService.askStream(eq(1L), eq("How to upload a document?"), isNull(), any()))
                 .thenAnswer(invocation -> {
                     @SuppressWarnings("unchecked")
-                    Consumer<QaChatService.UsageInfo> callback = invocation.getArgument(2, Consumer.class);
+                    Consumer<QaChatService.UsageInfo> callback = invocation.getArgument(3, Consumer.class);
                     Flux<String> tokenFlux = Flux.just("Upload ", "from group page.")
                             .doOnComplete(() -> callback.accept(
                                     new QaChatService.UsageInfo(12, 6, 18, false, 222L)));
@@ -129,6 +161,7 @@ class QaServiceTest {
                             tokenFlux,
                             List.of(evidence),
                             EvidenceLevel.SUFFICIENT,
+                            new AtomicReference<>(),
                             new AtomicReference<>());
                 });
         when(qaRecordPersistenceService.saveCompleted(any())).thenReturn(89L);
@@ -160,23 +193,31 @@ class QaServiceTest {
     @Test
     @DisplayName("流式 token 流被重订阅（重试）时持久化只发生一次、返回幂等")
     void shouldPersistOnlyOnceWhenStreamResubscribed() {
-        QaService qaService = new QaService(
+                org.mockito.Mockito.when(qaConversationQueryRewriter.rewrite(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> inv.getArgument(0));
+QaService qaService = new QaService(
                 groupMembershipService,
                 qaChatService,
                 currentUserService,
                 llmUsageCollector,
                 llmCostCalculator,
-                qaRecordPersistenceService
+                qaRecordPersistenceService,
+                qaConversationMemoryService,
+                qaConversationQueryRewriter,
+                org.mockito.Mockito.mock(com.argus.rag.assistant.trace.TaskTraceRecorder.class)
         );
         AskQuestionRequest request = new AskQuestionRequest();
         request.setGroupId(1L);
         request.setQuestion("What is World Refund?");
         when(currentUserService.getRequiredCurrentUser())
                 .thenReturn(new CurrentUserService.CurrentUser(7L, "u007", "Bob", SystemRole.USER, false));
-        when(qaChatService.askStream(eq(1L), eq("What is World Refund?"), any()))
+        when(qaChatService.askStream(eq(1L), eq("What is World Refund?"), isNull(), any()))
                 .thenAnswer(invocation -> {
                     @SuppressWarnings("unchecked")
-                    Consumer<QaChatService.UsageInfo> callback = invocation.getArgument(2, Consumer.class);
+                    Consumer<QaChatService.UsageInfo> callback = invocation.getArgument(3, Consumer.class);
                     Flux<String> tokenFlux = Flux.just("The ", "answer")
                             .doOnComplete(() -> callback.accept(
                                     new QaChatService.UsageInfo(3, 5, 8, false, 55L)));
@@ -184,6 +225,7 @@ class QaServiceTest {
                             tokenFlux,
                             List.of(),
                             EvidenceLevel.SUFFICIENT,
+                            new AtomicReference<>(),
                             new AtomicReference<>());
                 });
         when(qaRecordPersistenceService.saveCompleted(any())).thenReturn(90L);

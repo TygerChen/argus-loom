@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/* eslint-disable @typescript-eslint/no-explicit-any -- 薪资台账/报表页面的载荷镜像任意工作簿 JSON，沿用 api/finance.ts 的动态类型约定 */
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
@@ -317,7 +318,7 @@ onMounted(() => {
   padding: 7px 10px;
   border: 1px solid var(--el-border-color);
   border-radius: 6px;
-  background: #fff;
+  background: var(--surface-white);
 }
 .summary-grid {
   display: grid;
@@ -396,7 +397,7 @@ onMounted(() => {
   padding: 6px 8px;
   border: 1px solid var(--el-border-color);
   border-radius: 6px;
-  background: #fff;
+  background: var(--surface-white);
   font-size: 13px;
 }
 .input--narrow {

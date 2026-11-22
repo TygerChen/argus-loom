@@ -17,6 +17,8 @@ public class QaRecordEntity {
     private Long id;
     /** 提问用户 ID。 */
     private Long userId;
+    /** 所属多轮会话 ID（V12），单轮模式下为空。 */
+    private Long conversationId;
     /** 问答发生的知识库群组 ID。 */
     private Long groupId;
     /** 用户原始问题。 */

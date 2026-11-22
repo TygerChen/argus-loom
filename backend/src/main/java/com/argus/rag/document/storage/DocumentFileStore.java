@@ -56,6 +56,30 @@ public class DocumentFileStore {
         storage.putObject(bucket, key, new ByteArrayInputStream(chunkData), chunkData.length, OCTET_STREAM);
     }
 
+    /**
+     * 读取对象头部字节（文件签名校验用，最多 {@code maxBytes} 字节）。
+     * <p>只读头部即关闭流，不做全量下载——入口校验保持零重担。</p>
+     *
+     * @return 实际读到的头字节（对象为空返回空数组）
+     * @throws com.argus.rag.common.exception.BusinessException 读取失败
+     */
+    public byte[] readObjectHead(String bucket, String key, int maxBytes) {
+        try (InputStream in = storage.getObject(bucket, key)) {
+            byte[] buffer = new byte[maxBytes];
+            int read = 0;
+            while (read < maxBytes) {
+                int n = in.read(buffer, read, maxBytes - read);
+                if (n < 0) {
+                    break;
+                }
+                read += n;
+            }
+            return read == maxBytes ? buffer : java.util.Arrays.copyOf(buffer, read);
+        } catch (IOException exception) {
+            throw new com.argus.rag.common.exception.BusinessException("读取上传内容失败");
+        }
+    }
+
     /** 写入直接上传（或分片合计）的完整文件对象。 */
     public void putDirect(String bucket, String key, InputStream in, long size, String contentType) {
         storage.putObject(bucket, key, in, size, contentType);

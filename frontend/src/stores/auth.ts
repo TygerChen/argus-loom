@@ -13,7 +13,9 @@ import http from '../api/http'
 
 const ADMIN_HOME_PATH = '/app/admin'
 const USER_HOME_PATH = '/app/groups'
-const FINANCE_HOME_PATH = '/app/excel/finance'
+// 对话优先：USER/FINANCE 的登录落点是 AI 问答页（ADMIN 是纯控制台角色，
+// 后端 requireBusinessUser 不允许其进入业务区，故保留管理台落点）
+const CHAT_HOME_PATH = '/app/assistant'
 const ACCOUNT_SECURITY_PATH = '/app/settings'
 const LOGIN_PATH = '/login'
 const BUSINESS_PATH_PREFIXES = ['/app/groups', '/app/documents', '/app/assistant', '/app/excel']
@@ -31,7 +33,8 @@ const BUSINESS_PATH_PREFIXES = ['/app/groups', '/app/documents', '/app/assistant
  *       applyAuthorizationHeader，把 "Bearer xxx" 挂到 axios 全局默认头——
  *       之后所有请求自动带上，业务代码不用操心；</li>
  *   <li><b>角色路由</b>：resolveAuthorizedPath 按角色决定"登录后落在哪"——
- *       ADMIN 管理台、FINANCE 财务工作台、USER 知识库首页；用户手动改网址
+ *       对话优先：USER/FINANCE 落 AI 问答页，ADMIN（纯控制台角色）落管理台；
+ *       用户手动改网址
  *       也会被 resolveRoleRedirect 拉回自己有权的区域（前端引导，
  *       后端才是真防线，03 篇）。</li>
  * </ol>
@@ -198,16 +201,17 @@ export function resolveAuthorizedPath(
   }
 
   if (user.systemRole === 'FINANCE') {
-    const financePath = '/app/excel/finance'
-    if (safeRequestedPath === financePath || safeRequestedPath?.startsWith('/app/excel') === true) {
+    // 对话优先：财务也默认落在问答页；明确请求的业务路径仍然尊重，
+    // 越权由 resolveRoleRedirect / 路由守卫兜底
+    if (safeRequestedPath?.startsWith('/app') === true) {
       return safeRequestedPath
     }
-    return FINANCE_HOME_PATH
+    return CHAT_HOME_PATH
   }
 
   return isBusinessPath(safeRequestedPath) || safeRequestedPath === ACCOUNT_SECURITY_PATH
     ? safeRequestedPath
-    : USER_HOME_PATH
+    : CHAT_HOME_PATH
 }
 
 export function resolveRoleRedirect(user: CurrentUserProfile, requestedPath: string): string | null {

@@ -1,5 +1,7 @@
 package com.argus.rag.engine.reranking;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -14,7 +16,10 @@ import org.springframework.context.annotation.Configuration;
  *   <li><b>remote</b>：调用本地网关的 BGE cross-encoder（{@link RemoteHttpRerankingService}），
  *       真正重排。仅在显式配置时生效——上线前必须先完成离线对比评测
  *       （HitRate/MRR/延迟，对照组见 {@code scripts/rag_eval/report.md} 基线）；</li>
- *   <li><b>默认（未配置或缺 bean）</b>：{@code NoOp} 原序放行，链路永不因缺模型中断。</li>
+ *   <li><b>默认（未配置）</b>：{@code NoOp} 原序放行，链路永不因缺模型中断。两个 bean
+ *       用互斥的 @ConditionalOnProperty（而非 @ConditionalOnMissingBean 顺序依赖）——
+ *       普通 {@code @Configuration} 里 missing-bean 条件的评估顺序不保证，曾导致
+ *       remote 与 NoOp 并存、按名注入命中 NoOp 的缺陷（2026-11-08 修复）。</li>
  * </ul>
  *
  * <p>remote bean 声明在 NoOp 之前，{@code @ConditionalOnMissingBean} 据此让位；
@@ -23,6 +28,9 @@ import org.springframework.context.annotation.Configuration;
  */
 @Configuration
 public class RerankingConfiguration {
+
+    private static final Logger log = LoggerFactory.getLogger(RerankingConfiguration.class);
+
 
     @Bean
     @ConditionalOnProperty(name = "argus.rag.reranking.provider", havingValue = "remote")
@@ -34,7 +42,7 @@ public class RerankingConfiguration {
     }
 
     @Bean
-    @ConditionalOnMissingBean(RerankingService.class)
+    @ConditionalOnProperty(name = "argus.rag.reranking.provider", havingValue = "noop", matchIfMissing = true)
     public RerankingService rerankingService() {
         return new RerankingService.NoOp();
     }

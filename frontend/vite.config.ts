@@ -61,6 +61,12 @@ export default defineConfig({
           })
         },
       },
+      // Actuator 健康检查：系统总览页读真实健康状态用（同源代理避免跨域）。
+      // 生产部署时在 Nginx 加同样的 location 转发即可。
+      '/actuator': {
+        target: apiProxyTarget,
+        changeOrigin: true,
+      },
     },
   },
 })

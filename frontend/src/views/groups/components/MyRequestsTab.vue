@@ -222,7 +222,7 @@ function formatDate(dateStr?: string) {
 
 /* Glass Table Styles */
 .glass-table-container {
-  background: rgba(255, 255, 255, 0.5);
+  background: color-mix(in srgb, var(--surface-white) 50%, transparent);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border: 1px solid var(--border-default);

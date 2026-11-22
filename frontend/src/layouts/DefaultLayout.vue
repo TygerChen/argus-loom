@@ -1,16 +1,22 @@
 <script setup lang="ts">
 /**
- * 登录后的整体布局外壳：侧边导航（按角色渲染菜单）、顶栏（用户菜单、
- * 退出登录）。角色标签直接读 authStore——菜单权限是前端引导，
- * 接口权限由后端把守（03 篇的两层防线分工）。
+ * 登录后的整体布局外壳 v2：侧边导航（按角色渲染菜单）、顶栏（面包屑、
+ * 主题切换、全屏、用户菜单）。角色标签直接读 authStore——菜单权限是前端
+ * 引导，接口权限由后端把守（03 篇的两层防线分工）。
+ *
+ * v2 壳层改造（借 SoybeanAdmin 的壳，不换业务心）：
+ * - 颜色全部 token 化，配合 useTheme 实现深浅主题一键切换
+ * - 顶栏新增主题/全屏切换；路由切换带 fade-in-up 过渡
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useTheme } from '@/composables/useTheme'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const { theme, toggleTheme } = useTheme()
 
 const userName = computed(() => authStore.currentUser?.displayName ?? '用户')
 const roleLabel = computed(() => {
@@ -24,6 +30,19 @@ const roleLabel = computed(() => {
 const sidebarCollapsed = ref(false)
 function toggleSidebar() {
   sidebarCollapsed.value = !sidebarCollapsed.value
+}
+
+// ── 全屏 ──
+const isFullscreen = ref(false)
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen?.().catch(() => {})
+  } else {
+    document.exitFullscreen?.().catch(() => {})
+  }
+}
+function onFullscreenChange() {
+  isFullscreen.value = !!document.fullscreenElement
 }
 
 // ── 用户菜单 ──
@@ -46,8 +65,14 @@ function onDocumentClick(e: MouseEvent) {
   }
 }
 
-onMounted(() => document.addEventListener('click', onDocumentClick))
-onUnmounted(() => document.removeEventListener('click', onDocumentClick))
+onMounted(() => {
+  document.addEventListener('click', onDocumentClick)
+  document.addEventListener('fullscreenchange', onFullscreenChange)
+})
+onUnmounted(() => {
+  document.removeEventListener('click', onDocumentClick)
+  document.removeEventListener('fullscreenchange', onFullscreenChange)
+})
 
 // ── 当前激活菜单 ──
 const activeMenu = computed(() => {
@@ -56,6 +81,7 @@ const activeMenu = computed(() => {
   if (path.startsWith('/app/assistant')) return 'assistant'
   if (path.startsWith('/app/excel')) return 'excel'
   if (path.startsWith('/app/excel/finance')) return 'excel-finance'
+  if (path.startsWith('/app/finance/fund-daily')) return 'finance-fund-daily'
   if (path.startsWith('/app/groups')) return 'groups'
   if (path === '/app/admin' || path === '/app/admin/') return 'admin-overview'
   if (path.startsWith('/app/admin/metrics')) return 'admin-metrics'
@@ -64,20 +90,20 @@ const activeMenu = computed(() => {
   return 'groups'
 })
 
-// ── 所有菜单项定义（角色无关） ──
+// ── 所有菜单项定义（角色无关；对话优先——问答是第一入口） ──
 const allMenuItems = [
   {
-    key: 'documents',
-    label: '文档管理',
-    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M14 2H7C5.89543 2 5 2.89543 5 4V20C5 21.1046 5.89543 22 7 22H17C18.1046 22 19 21.1046 19 20V7L14 2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M14 2V7H19" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>`,
-    path: '/app/documents',
+    key: 'assistant',
+    label: 'AI 问答',
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/><path d="M8.5 12C8.5 10.067 10.067 8.5 12 8.5C13.933 8.5 15.5 10.067 15.5 12C15.5 13.933 13.933 15.5 12 15.5C10.067 15.5 8.5 13.933 8.5 12Z" stroke="currentColor" stroke-width="1.5"/><path d="M18.5 8.5L20 7M5.5 8.5L4 7M18.5 15.5L20 17M5.5 15.5L4 17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+    path: '/app/assistant',
     roles: ['USER'] as const,
   },
   {
-    key: 'assistant',
-    label: 'AI 助手',
-    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/><path d="M8.5 12C8.5 10.067 10.067 8.5 12 8.5C13.933 8.5 15.5 10.067 15.5 12C15.5 13.933 13.933 15.5 12 15.5C10.067 15.5 8.5 13.933 8.5 12Z" stroke="currentColor" stroke-width="1.5"/><path d="M18.5 8.5L20 7M5.5 8.5L4 7M18.5 15.5L20 17M5.5 15.5L4 17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
-    path: '/app/assistant',
+    key: 'documents',
+    label: '知识库文档',
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M14 2H7C5.89543 2 5 2.89543 5 4V20C5 21.1046 5.89543 22 7 22H17C18.1046 22 19 21.1046 19 20V7L14 2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M14 2V7H19" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>`,
+    path: '/app/documents',
     roles: ['USER'] as const,
   },
   {
@@ -100,6 +126,20 @@ const allMenuItems = [
     icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4 20V10M10 20V4M16 20V7M22 20H2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
     path: '/app/finance/workbench',
     roles: ['FINANCE'] as const,
+  },
+  {
+    key: 'finance-fund-daily',
+    label: '资金日报',
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M3 9H21M7 13H17M7 17H13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+    path: '/app/finance/fund-daily',
+    roles: ['FINANCE'] as const,
+  },
+  {
+    key: 'task-daily',
+    label: '任务日报',
+    icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M8 10H16M8 14H12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M9 20L6 17L7.5 15.5L9 17L12.5 13.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+    path: '/app/reports/task-daily',
+    roles: ['USER', 'FINANCE', 'ADMIN'] as const,
   },
   {
     key: 'my-payroll',
@@ -165,7 +205,7 @@ function navigateTo(path: string) {
   <div class="app-layout" :class="{ collapsed: sidebarCollapsed }">
     <!-- ── 侧边栏 ── -->
     <aside class="sidebar">
-      <!-- Logo -->
+      <!-- 品牌 -->
       <div class="sidebar-brand" @click="router.push('/')">
         <div class="sidebar-brand__mark">
           <svg width="22" height="22" viewBox="0 0 32 32" fill="none">
@@ -220,6 +260,11 @@ function navigateTo(path: string) {
           <span v-show="!sidebarCollapsed" class="nav-label">{{ item.label }}</span>
           <span v-show="!sidebarCollapsed && activeMenu === item.key" class="nav-item__dot" />
         </div>
+
+        <div v-show="!sidebarCollapsed" class="sidebar-foot">
+          <span class="sidebar-foot__env">Argus RAG</span>
+          <span class="sidebar-foot__ver">v0.1.0</span>
+        </div>
       </div>
     </aside>
 
@@ -228,18 +273,40 @@ function navigateTo(path: string) {
       <!-- 顶栏 -->
       <header class="topbar">
         <div class="topbar-left">
-          <button class="btn-sidebar-toggle" :title="sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'" @click="toggleSidebar">
+          <button class="topbar-btn" :title="sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'" @click="toggleSidebar">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
               <path d="M4 6H20M4 12H14M4 18H20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
             </svg>
           </button>
           <div class="breadcrumb">
-            <span class="breadcrumb-eyebrow">Argus</span>
-            <span class="breadcrumb-sep">/</span>
             <span class="breadcrumb-current">{{ route.meta.title || '数据洞察中心' }}</span>
           </div>
         </div>
         <div class="topbar-right">
+          <!-- 主题切换 -->
+          <button
+            class="topbar-btn"
+            :title="theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'"
+            @click="toggleTheme"
+          >
+            <svg v-if="theme === 'dark'" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2V4M12 20V22M4.22 4.22L5.64 5.64M18.36 18.36L19.78 19.78M2 12H4M20 12H22M4.22 19.78L5.64 18.36M18.36 5.64L19.78 4.22" />
+            </svg>
+            <svg v-else width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+          </button>
+          <!-- 全屏 -->
+          <button class="topbar-btn" :title="isFullscreen ? '退出全屏' : '进入全屏'" @click="toggleFullscreen">
+            <svg v-if="isFullscreen" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3" />
+            </svg>
+            <svg v-else width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+            </svg>
+          </button>
+
           <div class="user-menu-wrapper">
             <button class="user-chip" :class="{ 'is-open': showUserMenu }" @click="toggleUserMenu">
               <span class="user-chip__avatar">{{ userName.charAt(0).toUpperCase() }}</span>
@@ -260,7 +327,6 @@ function navigateTo(path: string) {
                   <span class="dropdown-role">{{ roleLabel }}</span>
                 </div>
               </div>
-              <div class="dropdown-divider"></div>
               <button class="dropdown-item" @click="handleLogout">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
                   <path d="M9 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
@@ -274,9 +340,13 @@ function navigateTo(path: string) {
         </div>
       </header>
 
-      <!-- 内容区 -->
+      <!-- 内容区（路由切换过渡） -->
       <main class="main-content">
-        <router-view />
+        <router-view v-slot="{ Component }">
+          <transition name="page" appear>
+            <component :is="Component" />
+          </transition>
+        </router-view>
       </main>
     </div>
   </div>
@@ -294,7 +364,7 @@ function navigateTo(path: string) {
 .sidebar {
   width: 244px;
   flex-shrink: 0;
-  background: #fbfaf6;
+  background: var(--surface-white);
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border-default);
@@ -305,17 +375,6 @@ function navigateTo(path: string) {
   left: 0;
   bottom: 0;
   z-index: 50;
-}
-
-.sidebar::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 1px;
-  background: linear-gradient(to bottom, transparent, rgba(74, 144, 217, 0.15), transparent);
-  pointer-events: none;
 }
 
 .collapsed .sidebar {
@@ -329,7 +388,7 @@ function navigateTo(path: string) {
   gap: 11px;
   padding: 20px 16px;
   cursor: pointer;
-  border-bottom: 1px dashed var(--border-default);
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
   position: relative;
 }
@@ -341,7 +400,7 @@ function navigateTo(path: string) {
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: #fff;
+  background: var(--surface-accent);
   box-shadow: 0 2px 8px rgba(74, 144, 217, 0.1);
   flex-shrink: 0;
   transition: transform 0.25s ease;
@@ -359,16 +418,14 @@ function navigateTo(path: string) {
 }
 
 .sidebar-brand__eyebrow {
-  font-family: 'Poppins', sans-serif;
   font-size: 0.6rem;
-  font-weight: 600;
-  letter-spacing: 0.18em;
+  font-weight: 700;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
 
 .sidebar-brand__title {
-  font-family: 'Poppins', 'Noto Sans SC', sans-serif;
   font-weight: 700;
   font-size: 0.95rem;
   color: var(--text-primary);
@@ -396,8 +453,7 @@ function navigateTo(path: string) {
 .sidebar-nav__label {
   display: block;
   padding: 4px 12px 8px;
-  font-family: 'Poppins', sans-serif;
-  font-size: 0.66rem;
+  font-size: 0.64rem;
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -405,12 +461,27 @@ function navigateTo(path: string) {
 }
 
 .sidebar-bottom {
-  padding: 10px 10px 16px;
-  border-top: 1px dashed var(--border-default);
+  padding: 10px 10px 12px;
+  border-top: 1px solid var(--border-subtle);
 }
 
-.brand-text {
-  display: none;
+.sidebar-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px 0;
+  font-size: 0.66rem;
+  color: var(--text-muted);
+}
+
+.sidebar-foot__env {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.sidebar-foot__ver {
+  font-family: 'JetBrains Mono', monospace;
 }
 
 /* Collapsed tweaks */
@@ -424,7 +495,7 @@ function navigateTo(path: string) {
 }
 
 .collapsed .sidebar-bottom {
-  padding: 10px 8px 16px;
+  padding: 10px 8px 12px;
 }
 
 .collapsed .sidebar-nav__label {
@@ -449,15 +520,16 @@ function navigateTo(path: string) {
 }
 
 .nav-item:hover {
-  background: rgba(74, 144, 217, 0.06);
+  background: var(--surface-accent);
   color: var(--text-primary);
+  transform: translateX(2px);
 }
 
 .nav-item.active {
-  background: #fff;
+  background: var(--surface-accent);
   color: var(--brand-primary);
   font-weight: 600;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(74, 144, 217, 0.18);
 }
 
 .nav-item__bar {
@@ -526,14 +598,14 @@ function navigateTo(path: string) {
 
 /* ════════════ Topbar ════════════ */
 .topbar {
-  height: 64px;
-  background: rgba(255, 255, 255, 0.92);
+  height: 60px;
+  background: color-mix(in srgb, var(--surface-white) 92%, transparent);
   backdrop-filter: saturate(180%) blur(12px);
   border-bottom: 1px solid var(--border-default);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 28px;
+  padding: 0 24px;
   position: sticky;
   top: 0;
   z-index: 40;
@@ -546,7 +618,8 @@ function navigateTo(path: string) {
   gap: 14px;
 }
 
-.btn-sidebar-toggle {
+/* 顶栏图标按钮统一规格（折叠/主题/全屏） */
+.topbar-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -560,47 +633,28 @@ function navigateTo(path: string) {
   transition: all 0.15s ease;
 }
 
-.btn-sidebar-toggle:hover {
-  background: var(--surface-subtle);
-  border-color: var(--border-default);
+.topbar-btn:hover {
+  background: var(--surface-accent);
+  border-color: rgba(74, 144, 217, 0.2);
   color: var(--brand-primary);
 }
 
 .breadcrumb {
   display: flex;
   align-items: baseline;
-  gap: 7px;
-}
-
-.breadcrumb-eyebrow {
-  font-family: 'Poppins', sans-serif;
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.breadcrumb-sep {
-  color: var(--text-muted);
-  font-size: 0.86rem;
-  font-weight: 300;
 }
 
 .breadcrumb-current {
-  font-family: 'Poppins', 'Noto Sans SC', sans-serif;
   font-size: 0.95rem;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-primary);
-  letter-spacing: -0.01em;
 }
 
 .topbar-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
-
 
 /* User chip */
 .user-chip {
@@ -608,12 +662,13 @@ function navigateTo(path: string) {
   align-items: center;
   gap: 10px;
   padding: 5px 10px 5px 5px;
-  background: #fff;
+  background: var(--surface-white);
   border: 1px solid var(--border-default);
   border-radius: 100px;
   cursor: pointer;
   font-family: inherit;
   transition: all 0.18s ease;
+  margin-left: 6px;
 }
 
 .user-chip:hover {
@@ -655,7 +710,6 @@ function navigateTo(path: string) {
 }
 
 .user-chip__role {
-  font-family: 'Poppins', sans-serif;
   font-size: 0.62rem;
   font-weight: 600;
   letter-spacing: 0.1em;
@@ -685,7 +739,6 @@ function navigateTo(path: string) {
   }
 }
 
-
 /* ── 用户下拉菜单 ── */
 .user-menu-wrapper {
   position: relative;
@@ -696,7 +749,7 @@ function navigateTo(path: string) {
   top: calc(100% + 10px);
   right: 0;
   width: 240px;
-  background: #fff;
+  background: var(--surface-white);
   border: 1px solid var(--border-default);
   border-radius: 14px;
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.1);
@@ -722,7 +775,7 @@ function navigateTo(path: string) {
   gap: 11px;
   padding: 14px 16px 12px;
   background: linear-gradient(135deg, rgba(74, 144, 217, 0.04), rgba(92, 201, 193, 0.04));
-  border-bottom: 1px dashed var(--border-default);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .dropdown-header__avatar {
@@ -760,16 +813,11 @@ function navigateTo(path: string) {
 
 .dropdown-role {
   display: block;
-  font-family: 'Poppins', sans-serif;
   font-size: 0.62rem;
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--brand-primary);
-}
-
-.dropdown-divider {
-  display: none;
 }
 
 .dropdown-item {
@@ -793,12 +841,11 @@ function navigateTo(path: string) {
   color: var(--el-color-danger);
 }
 
-
 /* ════════════ Content ════════════ */
 .main-content {
   flex: 1;
   min-width: 0;
-  padding: 28px 32px;
+  padding: 24px 28px;
 }
 
 /* ════════════ Responsive ════════════ */

@@ -8,11 +8,7 @@ import type { LoginPayload } from '@/api/auth'
 const router = useRouter()
 const authStore = useAuthStore()
 
-const form = reactive<LoginPayload>({
-  loginId: '',
-  password: '',
-})
-
+const form = reactive<LoginPayload>({ loginId: '', password: '' })
 const loading = ref(false)
 const errorMsg = ref('')
 
@@ -24,10 +20,7 @@ async function handleLogin() {
   errorMsg.value = ''
   loading.value = true
   try {
-    await authStore.login({
-      loginId: form.loginId.trim(),
-      password: form.password,
-    })
+    await authStore.login({ loginId: form.loginId.trim(), password: form.password })
     router.push(authStore.resolveLandingPath())
   } catch (err) {
     errorMsg.value = extractApiError(err, '登录失败')
@@ -39,57 +32,36 @@ async function handleLogin() {
 
 <template>
   <div class="login-page">
-    <div class="login-card">
+    <div class="login-bg"></div>
+    <div class="login-center">
       <a href="/" class="login-logo">
-        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+        <svg width="30" height="30" viewBox="0 0 32 32" fill="none">
           <defs>
-            <linearGradient id="loginPageGrad" x1="2" y1="2" x2="30" y2="30"><stop stop-color="#4A90D9"/><stop offset="1" stop-color="#5CC9C1"/></linearGradient>
-            <path id="lpPetal" d="M16 3C17.5 6 20 9 22.5 10C20 11 17.5 11.5 16 13C14.5 11.5 12 11 9.5 10C12 9 14.5 6 16 3Z" fill="url(#loginPageGrad)" opacity="0.7"/>
+            <linearGradient id="lgGrad" x1="2" y1="2" x2="30" y2="30"><stop stop-color="#4A90D9"/><stop offset="1" stop-color="#5CC9C1"/></linearGradient>
+            <path id="lgPetal" d="M16 3C17.5 6 20 9 22.5 10C20 11 17.5 11.5 16 13C14.5 11.5 12 11 9.5 10C12 9 14.5 6 16 3Z" fill="url(#lgGrad)" opacity="0.7"/>
           </defs>
-          <use href="#lpPetal"/>
-          <use href="#lpPetal" transform="rotate(90 16 16)"/>
-          <use href="#lpPetal" transform="rotate(180 16 16)"/>
-          <use href="#lpPetal" transform="rotate(270 16 16)"/>
-          <circle cx="16" cy="16" r="5.5" fill="url(#loginPageGrad)"/>
+          <use href="#lgPetal"/><use href="#lgPetal" transform="rotate(90 16 16)"/><use href="#lgPetal" transform="rotate(180 16 16)"/><use href="#lgPetal" transform="rotate(270 16 16)"/>
+          <circle cx="16" cy="16" r="5.5" fill="url(#lgGrad)"/>
         </svg>
         <span>数据洞察中心</span>
       </a>
 
-      <h1>登录</h1>
-      <p class="subtitle">使用您的账号登录数据洞察中心</p>
+      <form class="login-card" @submit.prevent="handleLogin">
+        <h1>欢迎回来</h1>
+        <p class="sub">使用您的账号登录工作台</p>
 
-      <form class="login-form" @submit.prevent="handleLogin">
-        <div class="input-group">
-          <label>登录标识</label>
-          <input
-            v-model="form.loginId"
-            type="text"
-            placeholder="用户名或邮箱"
-            autocomplete="username"
-          />
-        </div>
+        <input v-model="form.loginId" type="text" placeholder="用户名或邮箱"
+               autocomplete="username" class="login-input" />
+        <input v-model="form.password" type="password" placeholder="输入密码"
+               autocomplete="current-password" class="login-input" />
 
-        <div class="input-group">
-          <label>密码</label>
-          <input
-            v-model="form.password"
-            type="password"
-            placeholder="输入密码"
-            autocomplete="current-password"
-          />
-        </div>
-
-        <p v-if="errorMsg" class="form-error">{{ errorMsg }}</p>
+        <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
 
         <button type="submit" class="btn-login" :disabled="loading">
-          <span v-if="!loading">登录</span>
-          <span v-else>登录中...</span>
+          {{ loading ? '登录中…' : '登录' }}
         </button>
+        <p class="hint">账号由系统管理员统一创建 · <a href="/" class="back">返回首页</a></p>
       </form>
-
-      <p class="form-footer">
-        还没有账号？<a href="/">返回首页注册</a>
-      </p>
     </div>
   </div>
 </template>
@@ -100,125 +72,70 @@ async function handleLogin() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, #f0f6fc 0%, #f8fafc 60%, #ffffff 100%);
-  padding: 40px 24px;
+  background: linear-gradient(160deg, #f0f4fa 0%, #f5f7fb 40%, #f0f6fc 100%);
+  position: relative;
 }
-
+.login-bg {
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(74,144,217,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(74,144,217,0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 60% 60% at 50% 50%, black 20%, transparent 75%);
+  pointer-events: none;
+}
+.login-center {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; align-items: center;
+  width: min(380px, calc(100% - 48px));
+}
+.login-logo {
+  display: flex; align-items: center; gap: 10px;
+  font-weight: 700; font-size: 16px; color: var(--text-primary);
+  margin-bottom: 36px;
+}
 .login-card {
   width: 100%;
-  max-width: 420px;
-  background: var(--surface-white);
-  border-radius: var(--radius-lg);
-  padding: 44px 40px;
-  box-shadow: var(--shadow-xl);
-  border: 1px solid var(--border-default);
+  padding: 36px 32px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.88);
+  border: 1px solid rgba(74,144,217,0.12);
+  box-shadow: 0 4px 24px rgba(74,144,217,0.06), 0 1px 4px rgba(0,0,0,0.02);
+  text-align: center;
 }
-
-.login-logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-family: 'Poppins', 'Noto Sans SC', sans-serif;
-  font-weight: 700;
-  font-size: 17px;
-  color: var(--text-primary);
-  margin-bottom: 28px;
-}
-
 .login-card h1 {
-  font-family: 'Poppins', 'Noto Sans SC', sans-serif;
-  font-size: 24px;
-  font-weight: 800;
-  color: var(--text-primary);
-  margin-bottom: 6px;
+  font-size: 24px; font-weight: 700; color: var(--text-primary);
+  margin: 0 0 6px;
 }
-
-.subtitle {
+.sub { font-size: 14px; color: var(--text-muted); margin: 0 0 28px; }
+.login-input {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border-default);
   font-size: 14px;
-  color: var(--text-secondary);
-  margin-bottom: 28px;
-}
-
-.login-form {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.input-group {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.input-group label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.input-group input {
-  padding: 11px 14px;
-  border: 1.5px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  font-size: 14px;
-  font-family: inherit;
-  color: var(--text-primary);
-  background: var(--surface-white);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  margin-bottom: 14px;
+  transition: border-color 0.2s;
   outline: none;
 }
-
-.input-group input::placeholder {
-  color: #94a3b8;
-}
-
-.input-group input:focus {
+.login-input:focus {
   border-color: var(--brand-primary);
-  box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.1);
+  box-shadow: 0 0 0 3px rgba(74,144,217,0.08);
 }
-
-.form-error {
-  font-size: 13px;
-  color: var(--el-color-danger);
-  margin: 0;
+.error {
+  color: #ef4444; font-size: 13px; margin: 0 0 12px;
 }
-
 .btn-login {
-  padding: 12px 24px;
-  border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-dark));
-  color: #fff;
-  font-size: 15px;
-  font-weight: 600;
-  transition: all 0.2s ease;
-  box-shadow: 0 4px 14px rgba(74, 144, 217, 0.25);
+  width: 100%;
+  padding: 13px;
+  border-radius: 10px;
+  background: var(--brand-primary); color: #fff;
+  font-size: 15px; font-weight: 600; border: none; cursor: pointer;
+  transition: background 0.2s;
   margin-top: 4px;
 }
-
-.btn-login:hover:not(:disabled) {
-  box-shadow: 0 6px 20px rgba(74, 144, 217, 0.35);
-  transform: translateY(-1px);
-}
-
-.btn-login:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.form-footer {
-  margin-top: 24px;
-  text-align: center;
-  font-size: 14px;
-  color: var(--text-secondary);
-}
-
-.form-footer a {
-  color: var(--brand-primary);
-  font-weight: 600;
-}
-
-.form-footer a:hover {
-  text-decoration: underline;
-}
+.btn-login:hover { background: var(--brand-primary-dark); }
+.btn-login:disabled { opacity: 0.6; cursor: not-allowed; }
+.hint { font-size: 12.5px; color: var(--text-muted); margin: 16px 0 0; }
+.hint .back { color: var(--brand-primary); text-decoration: none; }
 </style>

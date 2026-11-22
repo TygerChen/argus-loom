@@ -293,6 +293,9 @@ class DocumentUploadServiceTest {
         when(chunkMapper.selectByUploadId("up1")).thenReturn(List.of(c0));
         when(sessionMapper.update(any(), any())).thenReturn(1);
         givenDocumentId(77L);
+        // 文件签名守卫（写操作入口）需要首分片头部为真实 %PDF- 内容
+        when(objectStorageService.getObject(BUCKET, "uploads/1/up1/chunks/0"))
+                .thenReturn(new java.io.ByteArrayInputStream("%PDF-1.4\nstub".getBytes()));
 
         Long id = service.completeUpload(request, "up1");
 
@@ -359,7 +362,8 @@ class DocumentUploadServiceTest {
     @Test
     void directUploadPersistsAndPublishesEvent() {
         givenDocumentId(33L);
-        MockMultipartFile file = new MockMultipartFile("file", "a.pdf", "application/pdf", "pdf-bytes".getBytes());
+        MockMultipartFile file = new MockMultipartFile("file", "a.pdf", "application/pdf",
+                "%PDF-1.7\nbody-bytes".getBytes());
         UploadDocumentRequest req = new UploadDocumentRequest();
         req.setGroupId(1L);
         req.setFile(file);

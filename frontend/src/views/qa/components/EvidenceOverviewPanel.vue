@@ -147,7 +147,7 @@ function chunkRange(start: number | null, end: number | null, fallback: number |
 }
 
 .evidence-overview__group {
-  background: rgba(255, 255, 255, 0.72);
+  background: color-mix(in srgb, var(--surface-white) 72%, transparent);
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 8px;
   overflow: hidden;

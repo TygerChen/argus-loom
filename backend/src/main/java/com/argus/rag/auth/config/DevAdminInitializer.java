@@ -54,6 +54,11 @@ public class DevAdminInitializer implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
+        // 安全：密码缺失或仍是占位符时绝不初始化弱口令管理员（默认值已从硬编码改为空）
+        if (password == null || password.isBlank() || "change-me".equals(password.trim())) {
+            log.warn("开发环境管理员密码未配置（argus.rag.dev-admin.password），跳过初始化。请通过环境变量/.env 提供。");
+            return;
+        }
         User existing = userMapper.selectOne(
                 new LambdaQueryWrapper<User>()
                         .eq(User::getUsername, username)

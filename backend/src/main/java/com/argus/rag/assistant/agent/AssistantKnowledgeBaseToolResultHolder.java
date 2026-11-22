@@ -13,6 +13,8 @@ import java.util.List;
 public class AssistantKnowledgeBaseToolResultHolder {
 
     private List<AskQuestionResponse.Citation> citations = List.of();
+    /** 证据文本摘要（第八步独立校验的输入；只截断不存全文，上限 5 条×400 字）。 */
+    private List<String> evidenceDigests = List.of();
     private KnowledgeBaseSearchState searchState = KnowledgeBaseSearchState.NOT_STARTED;
 
     /**
@@ -35,6 +37,33 @@ public class AssistantKnowledgeBaseToolResultHolder {
      */
     public List<AskQuestionResponse.Citation> currentCitations() {
         return citations;
+    }
+
+    /**
+     * 记录证据文本摘要（第八步独立校验用）。
+     * <p>只留截断摘要：校验需要"答案 vs 证据"对照，但上下文纪律不允许搬运全文。</p>
+     */
+    public void recordEvidenceDigests(List<String> digests) {
+        if (digests == null || digests.isEmpty()) {
+            return;
+        }
+        List<String> capped = new java.util.ArrayList<>();
+        for (String digest : digests) {
+            if (capped.size() >= 5) {
+                break;
+            }
+            if (digest == null || digest.isBlank()) {
+                continue;
+            }
+            String normalized = digest.replaceAll("\s+", " ").trim();
+            capped.add(normalized.length() <= 400 ? normalized : normalized.substring(0, 400) + "…");
+        }
+        this.evidenceDigests = List.copyOf(capped);
+    }
+
+    /** 证据文本摘要（未检索时为空列表）。 */
+    public List<String> getEvidenceDigests() {
+        return evidenceDigests;
     }
 
     /**

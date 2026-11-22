@@ -6,6 +6,7 @@ import type {
   AssistantConversationContext,
   AssistantSessionDetail,
   AssistantSessionListItem,
+  PendingProposal,
 } from '../types/assistant'
 
 // ─────────────────────────────────────────────
@@ -272,4 +273,35 @@ function parseSseEvent(rawEvent: string): AssistantChatStreamEvent | null {
     ...parsed,
     event: (eventName || parsed.event) as AssistantChatStreamEvent['event'],
   }
+}
+
+// ─────────────────────────────────────────────
+// 写提案确认（第十一步确认门）
+// ─────────────────────────────────────────────
+
+/**
+ * 确认执行写提案（幂等键 = proposalId）
+ *
+ * POST /api/assistant/proposals/{proposalId}/confirm
+ */
+export async function confirmProposal(
+  proposalId: string,
+): Promise<{ proposalId: string; summary: string; batchId: string }> {
+  const { data } = await http.post<ApiResponse<{ proposalId: string; summary: string; batchId: string }>>(
+    `/assistant/proposals/${proposalId}/confirm`,
+  )
+  if (!data.success || data.data == null) {
+    throw new Error(data.message ?? '确认执行失败')
+  }
+  return data.data
+}
+
+/**
+ * 取消写提案
+ *
+ * DELETE /api/assistant/proposals/{proposalId}
+ */
+export async function cancelProposal(proposalId: string): Promise<boolean> {
+  const { data } = await http.delete<ApiResponse<boolean>>(`/assistant/proposals/${proposalId}`)
+  return data.success && data.data === true
 }

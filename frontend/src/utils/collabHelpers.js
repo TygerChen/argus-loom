@@ -3,7 +3,7 @@
  * 从 SheetEditor.vue 抽出，减少主组件体积（P2 可读性拆分第一步）。
  */
 
-/** 判定哪些 Univer 命令是“只读操作”（激活/滚动/缩放等），不计入脏标记 */
+/** 判定哪些 Univer 命令是“只读操作”（激活/滚动/缩放/冻结等），不计入脏标记 */
 export const READONLY_COMMAND_MARKERS = [
   'activate',
   'selection',
@@ -11,7 +11,9 @@ export const READONLY_COMMAND_MARKERS = [
   'scroll',
   'zoom',
   'close',
-  'spell'
+  'spell',
+  // sheet.command.set-frozen：冻结行/列是纯视图状态，不改变任何单元格数据
+  'frozen'
 ]
 
 export function isEditCommand(commandId) {

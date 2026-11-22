@@ -72,6 +72,8 @@ public class AssistantKnowledgeBaseTool {
             @ToolParam(description = "用于检索知识库的查询文本，通常使用用户当前问题。") String query,
             ToolContext toolContext
     ) {
+        // 第六步（调用工具）：执行门禁——在册/风险/预算（预算硬闸：用尽即拒）
+        ToolExecutionGuard.check(toolContext, TOOL_NAME);
         List<Long> groupIds = readGroupIds(toolContext);
         AssistantKnowledgeBaseToolResultHolder resultHolder = readResultHolder(toolContext);
         if (resultHolder.hasCompletedSearch()) {
@@ -102,6 +104,11 @@ public class AssistantKnowledgeBaseTool {
             );
         }
         resultHolder.recordCitations(result.citations());
+        // 第八步（验证结果）：留存证据文本摘要，供生成后的独立校验对照
+        resultHolder.recordEvidenceDigests(documents.stream()
+                .map(Document::getText)
+                .filter(text -> text != null && !text.isBlank())
+                .toList());
         return new KnowledgeBaseSearchToolResponse(
                 true,
                 null,

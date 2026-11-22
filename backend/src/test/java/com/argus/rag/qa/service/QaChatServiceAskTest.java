@@ -40,6 +40,10 @@ import static org.mockito.Mockito.when;
 @DisplayName("QA 同步证据门闸（QaChatService）")
 class QaChatServiceAskTest {
 
+    /** BYOK 解析器：单测里默认无用户配置 → 回落全局客户端 */
+    private final com.argus.rag.settings.UserChatModelService userChatModelService =
+            org.mockito.Mockito.mock(com.argus.rag.settings.UserChatModelService.class);
+
     private ChatClient chatClient;
     private ReadyChunkDocumentRetriever documentRetriever;
     private QaChatService svc;
@@ -55,7 +59,9 @@ class QaChatServiceAskTest {
         svc = new QaChatService(
                 chatClient, promptTemplate, documentRetriever, answerParser,
                 citationAssembler, evidenceAssembler, new ObjectMapper(),
-                new LlmDialogueMetrics(new SimpleMeterRegistry()));
+                new LlmDialogueMetrics(new SimpleMeterRegistry()),
+                userChatModelService,
+                org.mockito.Mockito.mock(com.argus.rag.qa.rag.RetrievalRelevanceReflector.class));
     }
 
     private static RetrievedEvidenceBundle bundleWith(EvidenceLevel level, List<Document> docs) {

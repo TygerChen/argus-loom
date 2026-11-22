@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/* eslint-disable @typescript-eslint/no-explicit-any -- 员工自助薪酬/考勤载荷镜像后端动态 VO，沿用 api/finance.ts 的动态类型约定 */
 import { ref, onMounted } from 'vue'
 import {
   getMyAttendance,
@@ -176,7 +177,7 @@ onMounted(load)
   padding: 7px 10px;
   border: 1px solid var(--el-border-color);
   border-radius: 6px;
-  background: #fff;
+  background: var(--surface-white);
 }
 .panel {
   border: 1px solid var(--el-border-color);

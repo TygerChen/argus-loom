@@ -278,7 +278,7 @@ function formatTime(iso: string): string {
   font-size: 0.78rem;
   font-weight: 600;
   color: #b45309;
-  background: #fff;
+  background: var(--surface-white);
   border: 1px solid rgba(245, 158, 11, 0.3);
   border-radius: var(--radius-xs);
   cursor: pointer;

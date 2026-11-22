@@ -15,14 +15,12 @@ import com.argus.rag.common.exception.BusinessException;
 import com.argus.rag.common.exception.ErrorCodes;
 import com.argus.rag.common.metrics.LlmDialogueMetrics;
 import io.micrometer.core.instrument.Timer;
+import org.springframework.ai.chat.model.ChatModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.retry.annotation.Backoff;
-import org.springframework.retry.annotation.Recover;
-import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Component;
 import jakarta.annotation.PreDestroy;
 import reactor.core.publisher.Flux;
@@ -66,6 +64,7 @@ public class AssistantAgentFacade {
             });
 
     private final AssistantReactAgentFactory assistantReactAgentFactory;
+    private final com.argus.rag.settings.UserChatModelService userChatModelService;
     private final AssistantRunnableConfigFactory assistantRunnableConfigFactory;
     private final AssistantPromptContextBuilder assistantPromptContextBuilder;
     private final ToolEventEmitter toolEventEmitter;
@@ -73,12 +72,14 @@ public class AssistantAgentFacade {
 
     public AssistantAgentFacade(
             AssistantReactAgentFactory assistantReactAgentFactory,
+            com.argus.rag.settings.UserChatModelService userChatModelService,
             AssistantRunnableConfigFactory assistantRunnableConfigFactory,
             AssistantPromptContextBuilder assistantPromptContextBuilder,
             ToolEventEmitter toolEventEmitter,
             LlmDialogueMetrics dialogueMetrics
     ) {
         this.assistantReactAgentFactory = assistantReactAgentFactory;
+        this.userChatModelService = userChatModelService;
         this.assistantRunnableConfigFactory = assistantRunnableConfigFactory;
         this.assistantPromptContextBuilder = assistantPromptContextBuilder;
         this.toolEventEmitter = toolEventEmitter;
@@ -99,46 +100,53 @@ public class AssistantAgentFacade {
      * @return 包含助手回复文本和引用列表的结果对象
      * @throws com.argus.rag.common.exception.BusinessException 当 Agent 调用失败或返回内容为空时
      */
-    @Retryable(
-                maxAttempts = 3,
-                backoff = @Backoff(delay = 1000, multiplier = 2, maxDelay = 8000),
-                retryFor = {RetryableGraphException.class}
-        )
     public AssistantAgentResult chat(
             Long userId,
             Long sessionId,
             AssistantToolMode toolMode,
             List<Long> groupIds,
             KbRouteStrategy routeStrategy,
-            String userMessage
+            String userMessage,
+            com.argus.rag.assistant.model.AssistantTaskContext taskContext
     ) {
         Timer.Sample sample = dialogueMetrics.start();
         boolean success = false;
         try {
         // 这里把“仅对话模式”的运行时输入收口成两部分：
-        // 1) instruction：系统提示词
+        // 1) instruction：系统提示词（第二步理解结果以 <task_understanding> 块注入）
         // 2) runnableConfig：session/user/toolMode 等 metadata，供 hooks 在 BEFORE_MODEL 阶段读取
         String instruction = assistantPromptContextBuilder.buildChatInstruction(
                 userId,
                 sessionId,
                 toolMode,
                 groupIds,
-                routeStrategy
+                routeStrategy,
+                taskContext
         );
+        // 第四步（组装上下文）：按方案预算初始化任务循环状态，Hook 每轮注入进度与退出条件。
+        com.argus.rag.assistant.loop.TaskLoopState loopState =
+                com.argus.rag.assistant.loop.TaskLoopState.from(taskContext == null ? null : taskContext.plan());
         RunnableConfig runnableConfig = assistantRunnableConfigFactory.create(
                 userId,
                 sessionId,
                 toolMode,
                 groupIds,
-                routeStrategy
+                routeStrategy,
+                loopState,
+                instruction
         );
         // 当前虽然是“仅对话模式”，底层仍然使用 ReactAgent，只是 system prompt 已改成纯对话风格。
         AssistantKnowledgeBaseToolResultHolder resultHolder = new AssistantKnowledgeBaseToolResultHolder();
-        ReactAgent agent = assistantReactAgentFactory.createAgent(instruction, toolMode, groupIds, resultHolder, userId);
-        // 把 checked 的图执行错误包装为可重试的运行时异常（可直接抛出、不向调用方传编译负担），
-        // 让 @Retryable 能捕获并按退避策略重试；原先在此转成 BusinessException 会让重试永不走不到。
-        // 同步调用经由 callWithTimeout 竞时，模型挂起/超全网卡时降级为统一可读文案，而非永远阻塞。
-        AssistantMessage assistantMessage = callWithTimeout(() -> agent.call(userMessage, runnableConfig));
+        // 第十一步：写提案持有器——写工具在循环里登记提案，响应装配据此下发确认卡片
+        AssistantProposalHolder proposalHolder = new AssistantProposalHolder();
+        ChatModel modelOverride = userChatModelService.resolveChatModel(userId);
+        ReactAgent agent = assistantReactAgentFactory.createAgent(instruction, toolMode, groupIds, resultHolder,
+                userId, modelOverride, loopState, proposalHolder, sessionId);
+        // 同步调用经由 callWithTimeout 竞时 + 显式指数退避重试（1s/2s/4s）：
+        // 只重试 RetryableGraphException（图执行瞬时故障）；超时/BusinessException 直接冒出。
+        // 改为显式循环而非 @Retryable 注解——@Recover 的签名魔法在参数演进时脆弱
+        // （本次 taskContext 换装后真机触发 "Cannot locate recovery method"），显式循环行为完全确定。
+        AssistantMessage assistantMessage = callAgentWithRetry(agent, userMessage, runnableConfig);
         if (log.isDebugEnabled()) {
             log.debug(
                     "AssistantAgentFacade.chat result. userId={}, sessionId={}, toolMode={}, groupIds={}, text={}, hasToolCalls={}, toolCallCount={}",
@@ -155,30 +163,51 @@ public class AssistantAgentFacade {
             throw new BusinessException("助手返回内容为空");
         }
         success = true;
-        return new AssistantAgentResult(assistantMessage.getText(), resultHolder.currentCitations());
+        return new AssistantAgentResult(assistantMessage.getText(), resultHolder.currentCitations(),
+                resultHolder.getEvidenceDigests(), loopState, toProposalVO(proposalHolder));
         } finally {
             dialogueMetrics.finish(sample, "assistant", "sync", success);
         }
     }
 
+    /** 提案转视图（无提案返回 null——绝大多数对话没有写操作）。 */
+    private com.argus.rag.assistant.model.vo.chat.PendingProposalVO toProposalVO(AssistantProposalHolder holder) {
+        if (holder == null || holder.current() == null) {
+            return null;
+        }
+        return com.argus.rag.assistant.model.vo.chat.PendingProposalVO.from(holder.current());
+    }
+
     /**
-     * 同步对话重试耗尽后的兜底。
-     * <p>与 {@link #chat} 同形参（异常类型置于首位），由 spring-retry 在 {@code @Retryable}
-     * 声明中毒耗尽后自动回调；这里把「多次尝试仍失败的图执行错误」转为面向用户的业务异常，
-     * 避免 GraphRunnerException 直接冒到全局兜底(500)且丢失业务文案。</p>
+     * 同步调用 + 显式指数退避重试（1s/2s/4s，共 3 次）。
+     * <p>只重试 {@link RetryableGraphException}（图执行瞬时故障）；
+     * 超时（BusinessException MODEL_UNAVAILABLE）与其他异常直接冒出，保持原 @Retryable 语义。
+     * 重试耗尽转为面向用户的业务异常，避免 GraphRunnerException 直接冒到全局兜底(500)。</p>
      */
-    @Recover
-    public AssistantAgentResult recoverFailedChat(
-            RetryableGraphException exception,
-            Long userId,
-            Long sessionId,
-            AssistantToolMode toolMode,
-            List<Long> groupIds,
-            KbRouteStrategy routeStrategy,
-            String userMessage
+    private AssistantMessage callAgentWithRetry(
+            ReactAgent agent,
+            String userMessage,
+            RunnableConfig runnableConfig
     ) {
-        log.warn("同步对话在重试后仍失败，降级为业务异常。userId={}, sessionId={}", userId, sessionId, exception);
-        throw new BusinessException("助手调用失败", exception);
+        final int maxAttempts = 3;
+        RuntimeException lastFailure = null;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return callWithTimeout(() -> agent.call(userMessage, runnableConfig));
+            } catch (RetryableGraphException retryable) {
+                lastFailure = retryable;
+                log.warn("同步对话图执行失败（第 {}/3 次）: {}", attempt, retryable.getMessage());
+                if (attempt < maxAttempts) {
+                    try {
+                        Thread.sleep(1000L << (attempt - 1));
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+        }
+        throw new BusinessException("助手调用失败", lastFailure);
     }
 
     /**
@@ -213,6 +242,7 @@ public class AssistantAgentFacade {
             List<Long> groupIds,
             KbRouteStrategy routeStrategy,
             String userMessage,
+            com.argus.rag.assistant.model.AssistantTaskContext taskContext,
             Consumer<String> deltaConsumer,
             Consumer<ToolEventEmitter.ToolEvent> toolEventConsumer
     ) {
@@ -224,18 +254,28 @@ public class AssistantAgentFacade {
                 sessionId,
                 toolMode,
                 groupIds,
-                routeStrategy
+                routeStrategy,
+                taskContext
         );
+        // 第四步（组装上下文）：流式路径同样注入任务循环状态。
+        com.argus.rag.assistant.loop.TaskLoopState loopState =
+                com.argus.rag.assistant.loop.TaskLoopState.from(taskContext == null ? null : taskContext.plan());
         RunnableConfig runnableConfig = assistantRunnableConfigFactory.create(
                 userId,
                 sessionId,
                 toolMode,
                 groupIds,
-                routeStrategy
+                routeStrategy,
+                loopState,
+                instruction
         );
         AssistantKnowledgeBaseToolResultHolder resultHolder = new AssistantKnowledgeBaseToolResultHolder();
+        // 第十一步：写提案持有器（流式与同步同一装配口径）
+        AssistantProposalHolder proposalHolder = new AssistantProposalHolder();
         toolEventEmitter.register(toolEventConsumer);
-        ReactAgent agent = assistantReactAgentFactory.createAgent(instruction, toolMode, groupIds, resultHolder, userId);
+        ChatModel modelOverride = userChatModelService.resolveChatModel(userId);
+        ReactAgent agent = assistantReactAgentFactory.createAgent(instruction, toolMode, groupIds, resultHolder,
+                userId, modelOverride, loopState, proposalHolder, sessionId);
         StringBuilder finalReply = new StringBuilder();
 
         // 生产级硬护栏：流式对话加总超时，防止模型侧挂起导致 SSE 永久僵住。
@@ -276,7 +316,8 @@ public class AssistantAgentFacade {
             throw new BusinessException("助手返回内容为空");
         }
         streamSuccess = true;
-        return new AssistantAgentResult(reply, resultHolder.currentCitations());
+        return new AssistantAgentResult(reply, resultHolder.currentCitations(),
+                resultHolder.getEvidenceDigests(), loopState, toProposalVO(proposalHolder));
         } finally {
             dialogueMetrics.finish(streamSample, "assistant", "stream", streamSuccess);
         }
@@ -297,8 +338,12 @@ public class AssistantAgentFacade {
         }
         if (type == OutputType.AGENT_MODEL_STREAMING) {
             // 正常流式路径下，模型边生成边向前端透传文本。
+            // 注意：必须用 isEmpty 而非 isBlank——模型常把换行/空格作为独立 chunk 下发
+            // （如"一"、"\n"、"二"），isBlank 会把纯空白增量当空串丢弃，
+            // 导致流式回答所有换行丢失、markdown 围栏整体失效（2026-11-08 修复，见
+            // AssistantAgentFacadeStreamingDeltaTest#whitespaceOnlyCandidatePassesThrough）。
             String delta = normalizeStreamingDelta(assistantMessage.getText(), finalReply.toString());
-            if (delta.isBlank()) {
+            if (delta.isEmpty()) {
                 return;
             }
             finalReply.append(delta);
@@ -319,7 +364,8 @@ public class AssistantAgentFacade {
     }
 
     static String normalizeStreamingDelta(String candidateText, String accumulatedReply) {
-        if (candidateText == null || candidateText.isBlank()) {
+        // isEmpty 而非 isBlank："\n" 是真实内容（见类内 whitespaceOnly 回归测试）
+        if (candidateText == null || candidateText.isEmpty()) {
             return "";
         }
         if (accumulatedReply.isEmpty()) {

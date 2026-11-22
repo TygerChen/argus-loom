@@ -281,6 +281,13 @@ public class DocumentUploadService {
                 .sorted(Comparator.comparing(DocumentUploadChunkEntity::getChunkIndex))
                 .toList();
         ensureAllChunksPresent(session, chunks);
+        // 文件可信度（写操作入口）：合并前用首分片真实内容校验扩展名一致性——
+        // init 阶段只有客户端自报的哈希/扩展名，伪造内容到这里才现形。
+        // 拒绝时保持会话 UPLOADING（不可完成），分片由既有过期机制清理，无孤儿合并产物。
+        byte[] mergedHead = fileStore.readObjectHead(
+                session.getStorageBucket(), chunks.get(0).getStorageObjectKey(),
+                com.argus.rag.document.service.FileSignatureGuard.HEAD_BYTES);
+        FileSignatureGuard.verify(mergedHead, session.getFileExt());
         log.info("分片上传-开始合并: uploadId={}, fileName={}, fileSize={}, chunkCount={}",
                 uploadId, session.getFileName(), session.getFileSize(), chunks.size());
         String objectKey = fileStore.finalObjectKey(session.getGroupId(), session.getUploaderUserId(), session.getFileExt());
@@ -588,6 +595,13 @@ public class DocumentUploadService {
         MultipartFile file = requireValidFile(uploadRequest.getFile());
         String fileName = extractDirectFileName(file);
         String fileExt = UploadInputGuard.extractFileExt(fileName);
+        // 文件可信度（写操作入口）：扩展名与真实内容一致性校验——伪装扩展名的文件
+        // 在入口即拒、不落对象存储（深层损坏/加密由 ETL 解析层兜底标 FAILED 可重试）。
+        try (java.io.InputStream headStream = file.getInputStream()) {
+            FileSignatureGuard.verify(FileSignatureGuard.readHead(headStream), fileExt);
+        } catch (java.io.IOException exception) {
+            throw new BusinessException("读取上传文件失败");
+        }
         String bucket = fileStore.defaultBucket();
         String objectKey = fileStore.directObjectKey(groupId, userId, fileExt);
         String fileHash = calculateSha256(file);

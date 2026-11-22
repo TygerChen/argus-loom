@@ -62,6 +62,14 @@ public class AssistantService {
     private final ObjectMapper objectMapper;
     private final LlmUsageCollector llmUsageCollector;
     private final LlmCostCalculator llmCostCalculator;
+    /** 第二步（理解任务）：语义理解产出注入 Agent 指令；失败 fail-soft。 */
+    private final com.argus.rag.understanding.TaskUnderstandingService taskUnderstandingService;
+    /** 第三步（制定方案）：经代码校验的执行计划注入 Agent 指令；失败走代码兜底方案。 */
+    private final com.argus.rag.planning.TaskPlanningService taskPlanningService;
+    /** 第八步（验证结果）：生成后独立校验（裁判与生成者两次独立 LLM 调用）；失败 fail-soft。 */
+    private final com.argus.rag.verify.AnswerVerifier answerVerifier;
+    /** 第十步（收尾与留痕）：任务轨迹落库（异步 fail-soft）。 */
+    private final com.argus.rag.assistant.trace.TaskTraceRecorder taskTraceRecorder;
 
     private static final Logger log = LoggerFactory.getLogger(AssistantService.class);
     private static final String MODEL_NAME = "qwen-plus";
@@ -75,7 +83,11 @@ public class AssistantService {
             KnowledgeGroupRouter knowledgeGroupRouter,
             ObjectMapper objectMapper,
             LlmUsageCollector llmUsageCollector,
-            LlmCostCalculator llmCostCalculator
+            LlmCostCalculator llmCostCalculator,
+            com.argus.rag.understanding.TaskUnderstandingService taskUnderstandingService,
+            com.argus.rag.planning.TaskPlanningService taskPlanningService,
+            com.argus.rag.verify.AnswerVerifier answerVerifier,
+            com.argus.rag.assistant.trace.TaskTraceRecorder taskTraceRecorder
     ) {
         this.assistantConversationService = assistantConversationService;
         this.assistantAgentFacade = assistantAgentFacade;
@@ -85,6 +97,10 @@ public class AssistantService {
         this.objectMapper = objectMapper;
         this.llmUsageCollector = llmUsageCollector;
         this.llmCostCalculator = llmCostCalculator;
+        this.taskUnderstandingService = taskUnderstandingService;
+        this.taskPlanningService = taskPlanningService;
+        this.answerVerifier = answerVerifier;
+        this.taskTraceRecorder = taskTraceRecorder;
     }
 
     /**
@@ -100,14 +116,28 @@ public class AssistantService {
         String reply = null;
         boolean success = false;
         String errorMessage = null;
+        // 入口段产出（第二步理解 + 第三步方案）：进入 Agent 前各计算一次（图重试不重复计算）。
+        // 理解失败 fail-soft；方案失败走代码兜底计划书——第四步永远有可执行输入。
+        com.argus.rag.understanding.TaskUnderstanding understanding =
+                taskUnderstandingService.understand(safeRequest.message(), groupIds, safeRequest.toolMode());
+        com.argus.rag.planning.ExecutionPlan plan = taskPlanningService.plan(
+                safeRequest.message(), understanding, groupIds, safeRequest.toolMode());
+        // 挂号台任务单贯穿：把入口票据快照（风险/动作/身份声明标记）收进任务上下文
+        com.argus.rag.common.task.EntryAuditSupport.TicketSnapshot ticket =
+                com.argus.rag.common.task.EntryAuditSupport.snapshot(request);
+        com.argus.rag.assistant.model.AssistantTaskContext taskContext =
+                new com.argus.rag.assistant.model.AssistantTaskContext(understanding, plan, ticket);
         try {
             saveUserMessage(currentUser.userId(), safeRequest, groupIds);
             AssistantExecutionResult executionResult = executeAssistant(
                     currentUser.userId(),
                     safeRequest,
-                    groupIds
+                    groupIds,
+                    taskContext
             );
-            reply = executionResult.reply();
+            DeliveryOutcome outcome = annotateIfNeeded(safeRequest, executionResult, plan, understanding);
+            reply = outcome.reply();
+            recordTaskTrace(safeRequest, executionResult, outcome, startTime);
             AssistantMessageVO assistantMessage = saveAssistantMessage(
                     currentUser.userId(),
                     safeRequest,
@@ -123,7 +153,8 @@ public class AssistantService {
                     firstGroupId(groupIds),
                     groupIds,
                     safeRequest.effectiveRouteStrategy(),
-                    executionResult.citations()
+                    executionResult.citations(),
+                    executionResult.pendingProposal()
             );
         } catch (Exception e) {
             errorMessage = e.getMessage();
@@ -156,6 +187,15 @@ public class AssistantService {
         CurrentUserService.CurrentUser currentUser = currentUserService.requireBusinessUser();
         AssistantChatRequest safeRequest = requireChatRequest(chatRequest);
         List<Long> groupIds = resolveKnowledgeScope(safeRequest, currentUser.userId());
+        // 入口段产出（第二步理解 + 第三步方案）：HTTP 流式入口计算一次，随 lambda 捕获传给门面。
+        com.argus.rag.understanding.TaskUnderstanding understanding =
+                taskUnderstandingService.understand(safeRequest.message(), groupIds, safeRequest.toolMode());
+        com.argus.rag.planning.ExecutionPlan plan = taskPlanningService.plan(
+                safeRequest.message(), understanding, groupIds, safeRequest.toolMode());
+        com.argus.rag.common.task.EntryAuditSupport.TicketSnapshot ticket =
+                com.argus.rag.common.task.EntryAuditSupport.snapshot(request);
+        com.argus.rag.assistant.model.AssistantTaskContext taskContext =
+                new com.argus.rag.assistant.model.AssistantTaskContext(understanding, plan, ticket);
         streamChat(safeRequest, eventEmitter, deltaEmitter ->
                 assistantAgentFacade.streamChat(
                         currentUser.userId(),
@@ -164,9 +204,10 @@ public class AssistantService {
                         groupIds,
                         safeRequest.effectiveRouteStrategy(),
                         safeRequest.message(),
+                        taskContext,
                         deltaEmitter,
                         toolEvent -> eventEmitter.emitToolEvent(toolEvent)
-                ));
+                ), taskContext);
     }
 
     /**
@@ -176,7 +217,8 @@ public class AssistantService {
     public void streamChat(
             AssistantChatRequest chatRequest,
             AssistantStreamEventEmitter eventEmitter,
-            ChatStreamExecutor streamExecutor
+            ChatStreamExecutor streamExecutor,
+            com.argus.rag.assistant.model.AssistantTaskContext taskContext
     ) {
         long startTime = System.currentTimeMillis();
         CurrentUserService.CurrentUser currentUser = currentUserService.requireBusinessUser();
@@ -211,7 +253,11 @@ public class AssistantService {
                     )),
                     streamExecutor
             );
-            reply = executionResult.reply();
+            DeliveryOutcome outcome = annotateIfNeeded(safeRequest, executionResult,
+                    taskContext == null ? null : taskContext.plan(),
+                    taskContext == null ? null : taskContext.understanding());
+            reply = outcome.reply();
+            recordTaskTrace(safeRequest, executionResult, outcome, startTime);
             AssistantMessageVO assistantMessage = saveAssistantMessage(
                     currentUser.userId(),
                     safeRequest,
@@ -227,7 +273,8 @@ public class AssistantService {
                     safeRequest.effectiveRouteStrategy(),
                     assistantMessage.messageId(),
                     executionResult.reply(),
-                    executionResult.citations()
+                    executionResult.citations(),
+                    executionResult.pendingProposal()
             ));
             success = true;
         } catch (Exception e) {
@@ -295,7 +342,8 @@ public class AssistantService {
     private AssistantExecutionResult executeAssistant(
             Long userId,
             AssistantChatRequest safeRequest,
-            List<Long> groupIds
+            List<Long> groupIds,
+            com.argus.rag.assistant.model.AssistantTaskContext taskContext
     ) {
         AssistantAgentResult agentResult = assistantAgentFacade.chat(
                 userId,
@@ -303,9 +351,69 @@ public class AssistantService {
                 safeRequest.toolMode(),
                 groupIds,
                 safeRequest.effectiveRouteStrategy(),
-                safeRequest.message()
+                safeRequest.message(),
+                taskContext
         );
-        return new AssistantExecutionResult(agentResult.reply(), null, agentResult.citations());
+        return new AssistantExecutionResult(agentResult.reply(), null, agentResult.citations(),
+                agentResult.evidenceDigests(), agentResult.loopState(), agentResult.pendingProposal());
+    }
+
+    /**
+     * 第八步（验证结果）+ 第九步（返回结果）：KB_SEARCH 模式对最终回复做独立校验
+     * 与形态派生——未获支撑时降级标注；冲突/需确认形态追加友好提示。
+     * <p>裁判与生成者是两次独立 LLM 调用（不自我背书）；校验失败/关闭→原样返回。
+     * CHAT 模式无证据可对照，跳过。</p>
+     */
+    /** 交付产出：标注后回复 + 结果形态 + 校验结果（第十步留痕的素材）。 */
+    private record DeliveryOutcome(
+            String reply,
+            com.argus.rag.assistant.model.ResultShape shape,
+            com.argus.rag.verify.VerificationResult verification
+    ) {
+    }
+
+    private DeliveryOutcome annotateIfNeeded(AssistantChatRequest safeRequest, AssistantExecutionResult result,
+                                             com.argus.rag.planning.ExecutionPlan plan,
+                                             com.argus.rag.understanding.TaskUnderstanding understanding) {
+        if (safeRequest.toolMode() != AssistantToolMode.KB_SEARCH
+                || result.evidenceDigests() == null || result.evidenceDigests().isEmpty()) {
+            return new DeliveryOutcome(result.reply(),
+                    com.argus.rag.assistant.model.ResultShape.DETERMINED, null);
+        }
+        com.argus.rag.verify.VerificationResult verification = answerVerifier.verify(
+                safeRequest.message(), result.reply(), result.evidenceDigests());
+        String reply = answerVerifier.annotate(result.reply(), verification);
+        // 第九步（返回结果）：形态派生 + 友好提示（代码仲裁，模型无权决定形态）
+        com.argus.rag.assistant.model.ResultShape shape = com.argus.rag.assistant.model.ResultShape.resolve(
+                plan, verification, understanding == null ? List.of() : understanding.ambiguities());
+        log.info("result.shape: {} (needConfirm={}, verificationEmpty={})",
+                shape.name(), plan != null && plan.needConfirm(), verification.isEmpty());
+        return new DeliveryOutcome(reply + shape.friendlyNotice(), shape, verification);
+    }
+
+    /** 第十步（收尾与留痕）：任务轨迹异步落库（traceId 串联 entry_log 与全链路日志）。 */
+    private void recordTaskTrace(AssistantChatRequest safeRequest, AssistantExecutionResult result,
+                                 DeliveryOutcome outcome, long startTime) {
+        try {
+            com.argus.rag.assistant.loop.TaskLoopState loopState = result.loopState();
+            com.argus.rag.common.security.AuthenticatedUser user =
+                    com.argus.rag.common.security.UserContext.get();
+            taskTraceRecorder.record(new com.argus.rag.assistant.trace.TaskTraceRecorder.TaskTraceRecord(
+                    org.slf4j.MDC.get(com.argus.rag.common.logging.TraceIdFilter.MDC_TRACE_ID),
+                    safeRequest.sessionId(),
+                    user != null ? user.userId() : null,
+                    user != null && user.systemRole() != null ? user.systemRole().name() : null,
+                    com.argus.rag.common.task.TaskChannel.ASSISTANT,
+                    safeRequest.message() == null ? 0 : safeRequest.message().length(),
+                    loopState,
+                    outcome.verification(),
+                    outcome.shape(),
+                    outcome.reply() == null ? 0 : outcome.reply().length(),
+                    System.currentTimeMillis() - startTime
+            ));
+        } catch (RuntimeException traceFailure) {
+            log.warn("任务轨迹组装失败(不影响主流程): {}", traceFailure.getMessage());
+        }
     }
 
     /**
@@ -319,7 +427,8 @@ public class AssistantService {
             ChatStreamExecutor streamExecutor
     ) {
         AssistantAgentResult agentResult = streamExecutor.execute(deltaConsumer);
-        return new AssistantExecutionResult(agentResult.reply(), null, agentResult.citations());
+        return new AssistantExecutionResult(agentResult.reply(), null, agentResult.citations(),
+                agentResult.evidenceDigests(), agentResult.loopState(), agentResult.pendingProposal());
     }
 
     private void saveUserMessage(Long userId, AssistantChatRequest safeRequest, List<Long> groupIds) {
@@ -433,7 +542,10 @@ public class AssistantService {
     private record AssistantExecutionResult(
             String reply,
             String structuredPayload,
-            List<com.argus.rag.qa.model.vo.AskQuestionResponse.Citation> citations
+            List<com.argus.rag.qa.model.vo.AskQuestionResponse.Citation> citations,
+            List<String> evidenceDigests,
+            com.argus.rag.assistant.loop.TaskLoopState loopState,
+            com.argus.rag.assistant.model.vo.chat.PendingProposalVO pendingProposal
     ) {
     }
 

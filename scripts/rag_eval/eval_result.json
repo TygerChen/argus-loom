@@ -1,581 +1,613 @@
 {
   "summary": {
-    "total_cases": 40,
-    "hit_rate_at_k": 1.0,
+    "total_cases": 45,
+    "hit_rate_at_k": 0.05,
     "k": 5,
-    "mrr": 1.0,
-    "avg_keyword_coverage": 0.9722,
-    "answer_accuracy_positive": 0.9444,
+    "mrr": 0.0375,
+    "avg_keyword_coverage": 0.0417,
+    "answer_accuracy_positive": 0.05,
     "refusal_accuracy_negative": 1.0,
-    "overall_accuracy": 0.95,
-    "answer_coverage_threshold": 0.6
+    "overall_accuracy": 0.1556,
+    "answer_coverage_threshold": 0.4
   },
   "results": [
     {
       "id": 1,
-      "question": "去北京出差住酒店一晚最多能报销多少钱？",
+      "question": "出纳管理模块怎么使用？",
       "expected_files": [
-        "公司差旅报销制度"
+        "出纳管理"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "依据《公司差旅报销制度》，北京属于一线城市，员工出差住宿报销标准为每晚不超过 500 元。"
+      "answered": false,
+      "reasonCode": "REQUEST_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 2,
-      "question": "出差餐费补贴一天是多少？",
+      "question": "固定资产如何管理？",
       "expected_files": [
-        "公司差旅报销制度"
+        "固定资产"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "依据《公司差旅报销制度》，出差期间餐费补贴为每天 100 元，无需提供发票；若为当天往返且出差时间超过 8 小时，则按半天补贴 50 元发放。"
+      "answered": false,
+      "reasonCode": "REQUEST_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 3,
-      "question": "差旅报销需要在出差结束后多少天内提交？",
+      "question": "合并报表怎么编制？",
       "expected_files": [
-        "公司差旅报销制度"
+        "合并报表"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "差旅报销需要在出差结束后15个工作日内提交。"
+      "answered": false,
+      "reasonCode": "REQUEST_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 4,
-      "question": "报销款审核通过后多久到账？",
+      "question": "预算管理如何设置？",
       "expected_files": [
-        "公司差旅报销制度"
+        "预算管理"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "根据《公司差旅报销制度》，报销款在财务审核通过后 5 个工作日内打入工资卡。"
+      "answered": false,
+      "reasonCode": "REQUEST_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 5,
-      "question": "坐飞机出差需要提前多久申请？",
+      "question": "资金管理模块有哪些功能？",
       "expected_files": [
-        "公司差旅报销制度"
+        "资金管理"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "根据《公司差旅报销制度》，乘坐飞机出差需提前 3 个工作日申请。"
+      "answered": false,
+      "reasonCode": "REQUEST_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 6,
-      "question": "二线城市的住宿报销标准是多少？",
+      "question": "应付款管理怎么操作？",
       "expected_files": [
-        "公司差旅报销制度"
+        "应付款管理"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "依据公司差旅报销制度，二线城市的住宿报销标准为每晚不超过 350 元。"
+      "answered": false,
+      "reasonCode": "REQUEST_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 7,
-      "question": "高铁什么时候可以坐一等座？",
+      "question": "费用报销流程是什么？",
       "expected_files": [
-        "公司差旅报销制度"
+        "费用报销"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "根据高铁二等座交通标准，单程超过8小时的高铁线路可以申请一等座。"
+      "answered": false,
+      "reasonCode": "REQUEST_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 8,
-      "question": "当天往返出差有餐补吗？",
+      "question": "费用管理怎么做？",
       "expected_files": [
-        "公司差旅报销制度"
+        "费用管理"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "有。依据公司差旅报销制度，当天往返且出差时间超过 8 小时的，按半天补贴 50 元发放餐费补贴。若当天往返但出差时间未超过 8 小时，证据中未提及是否有餐补，无法确认。"
+      "answered": false,
+      "reasonCode": "REQUEST_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 9,
-      "question": "市内交通报销有上限吗？",
+      "question": "付款单怎么处理？",
       "expected_files": [
-        "公司差旅报销制度"
+        "付款单"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "有上限。市内交通凭发票实报实销，单日上限为100元。"
+      "answered": false,
+      "reasonCode": "REQUEST_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 10,
-      "question": "虚报差旅发票会怎么处理？",
+      "question": "发票如何管理？",
       "expected_files": [
-        "公司差旅报销制度"
+        "发票管理"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "根据《公司差旅报销制度》，虚报差旅发票属于虚报行程或伪造发票，被视为严重违纪。一旦查实，将全额追回报销款，并按照公司员工手册给予警告直至解除劳动合同的处分。"
+      "answered": false,
+      "reasonCode": "REQUEST_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 11,
-      "question": "住宿超标了还能报销吗？",
+      "question": "出纳期末怎么对账？",
       "expected_files": [
-        "公司差旅报销制度"
+        "出纳期末对账"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "住宿超标能否报销取决于是否经过事先批准。根据《公司差旅报销制度》，如果超支部分已经事先经部门总监邮件批准，则可以报销；如果没有事先获得批准，则不予报销。"
+      "answered": false,
+      "reasonCode": "REQUEST_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 12,
-      "question": "飞机的选座费和行李费公司给报吗？",
+      "question": "付款申请单怎么提交？",
       "expected_files": [
-        "公司差旅报销制度"
+        "付款申请单"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "根据公司差旅报销制度，飞机选座费与行李费需员工自理，公司不予报销。"
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 13,
-      "question": "年假有几天？",
+      "question": "付款条件怎么设置？",
       "expected_files": [
-        "员工考勤与请假制度"
+        "付款条件"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "根据《员工考勤与请假制度》，年假天数依据工龄而定：入职满1年不满10年的每年5天；满10年不满20年的每年10天；满20年的每年15天。"
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 14,
-      "question": "入职满十年年假是多少天？",
+      "question": "到期债务表怎么查？",
       "expected_files": [
-        "员工考勤与请假制度"
+        "到期债务表"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "根据《员工考勤与请假制度》的规定，入职满十年且不满二十年的员工，每年年假为10天。"
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 15,
-      "question": "迟到会扣钱吗？",
+      "question": "采购管理模块怎么使用？",
       "expected_files": [
-        "员工考勤与请假制度"
+        "采购管理"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "依据《员工考勤与请假制度》，迟到在一定条件下会扣钱：单月迟到 3 次以内且每次不超过 10 分钟的不作处理；从第 4 次起，每次扣款 50 元。此外，迟到超过 30 分钟按半天事假计算，而事假期间不带薪。"
+      "answered": false,
+      "reasonCode": "REQUEST_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 16,
-      "question": "请病假需要什么证明？",
+      "question": "采购入库怎么核算？",
       "expected_files": [
-        "员工考勤与请假制度"
+        "采购入库核算"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 0.5,
+      "answered": false,
+      "reasonCode": "REQUEST_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
       "answer_ok": false,
-      "n_citations": 3,
-      "answer_excerpt": "请病假需提供三级甲等医院开具的诊断证明。"
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 17,
-      "question": "事假一年最多可以请多少天？",
+      "question": "采购费用如何分配？",
       "expected_files": [
-        "员工考勤与请假制度"
+        "采购费用分配"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "事假全年累计不超过15天。"
+      "answered": false,
+      "reasonCode": "REQUEST_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 18,
-      "question": "婚假有几天？",
+      "question": "供应商对账单怎么生成？",
       "expected_files": [
-        "员工考勤与请假制度"
+        "供应商对账单"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "法定婚假为3天。如果符合晚婚条件，可另外增加7天。休婚假需要在登记后6个月内一次性使用。"
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 19,
-      "question": "法定节假日加班工资怎么算？",
+      "question": "供应商如何协同？",
       "expected_files": [
-        "员工考勤与请假制度"
+        "供应商协同"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "法定节假日加班按3倍工资计算。"
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 20,
-      "question": "工作日加班可以调休吗？",
+      "question": "存货核算怎么操作？",
       "expected_files": [
-        "员工考勤与请假制度"
+        "存货核算"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "可以。工作日加班按 1.5 倍工资计算，或者选择 1:1 调休。加班需事先在考勤系统中提交申请，并经直属主管审批。"
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 21,
-      "question": "病假期间工资怎么发？",
+      "question": "存货核算如何初始化？",
       "expected_files": [
-        "员工考勤与请假制度"
+        "存货核算初始化"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "依据《员工考勤与请假制度》，病假需提供三级甲等医院开具的诊断证明，病假期间工资按当地最低工资标准的 80% 发放。"
+      "answered": false,
+      "reasonCode": "REQUEST_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 22,
-      "question": "公司几点上班？",
+      "question": "产品成本如何核算？",
       "expected_files": [
-        "员工考勤与请假制度"
+        "产品成本核算"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 0.5,
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
       "answer_ok": false,
-      "n_citations": 3,
-      "answer_excerpt": "公司工作日上班时间为 9:00。"
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 23,
-      "question": "年假没休完可以顺延吗？",
+      "question": "成本调整单怎么用？",
       "expected_files": [
-        "员工考勤与请假制度"
+        "成本调整单"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "根据员工考勤与请假制度，年假当年未休完可顺延至次年3月底。"
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 24,
-      "question": "连续请事假超过 5 天要注意什么？",
+      "question": "存货收发存汇总表怎么看？",
       "expected_files": [
-        "员工考勤与请假制度"
+        "存货收发存汇总表"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "根据《员工考勤与请假制度》规定，事假全年累计不超过 15 天，事假期间不带薪。若连续事假超过 5 天，需提前一周申请。"
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 25,
-      "question": "研发岗位可以弹性上班吗？",
+      "question": "定时核算怎么设置？",
       "expected_files": [
-        "员工考勤与请假制度"
+        "定时核算"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "研发岗位可以申请弹性上班，但不得晚于10:00到岗。"
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 26,
-      "question": "加班需要审批吗？",
+      "question": "单位换算怎么处理？",
       "expected_files": [
-        "员工考勤与请假制度"
+        "单位换算"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "加班需要审批。依据《员工考勤与请假制度》，员工加班需事先在考勤系统中提交申请，并经直属主管审批。"
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 27,
-      "question": "平台支持上传哪些格式的文档？",
+      "question": "车间管理有哪些功能？",
       "expected_files": [
-        "操作手册"
+        "车间管理"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "根据《智能知识库平台操作手册》，平台支持上传txt、md、pdf、docx四种格式的文档。单个文件不超过10MB，超过10MB的文件需使用分片上传，上限为256MB。"
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 28,
-      "question": "直接上传的文档最大不能超过多少？更大的文件怎么办？",
+      "question": "产品如何管理？",
       "expected_files": [
-        "操作手册"
+        "产品管理"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "直接上传的文档单个文件最大不能超过 10MB。如果需要上传更大的文件，请使用分片上传功能，该方式的上限为 256MB。"
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 29,
-      "question": "文档上传后多久可以被问答检索到？",
+      "question": "超级BOM怎么管理？",
       "expected_files": [
-        "操作手册"
+        "超级bom管理"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "文档上传后系统会自动进行解析、清洗、切片并向量化，一般 1 分钟内完成，状态变为 READY 后即可被问答检索到。"
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 30,
-      "question": "重复上传同一个文件会怎样？",
+      "question": "BOS平台是什么？",
       "expected_files": [
-        "操作手册"
+        "bos平台"
       ],
       "should_answer": true,
       "answered": true,
       "reasonCode": null,
-      "first_hit_rank": 1,
+      "first_hit_rank": 2,
       "retrieval_hit": true,
-      "keyword_coverage": 1.0,
+      "keyword_coverage": 0.6667,
       "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "在同一群组内重复上传相同文件时，系统会进行秒传去重。"
+      "n_citations": 4,
+      "answer_excerpt": "金蝶AI星空BOS（Business Operating System，业务操作系统）是一个开放的集成与应用平台，是金蝶ERP解决方案、合作伙伴解决方案以及客户定制应用的技术基础。它为企业灵活而迅速的设计、构建、实施和执行一套随需应变的ER"
     },
     {
       "id": 31,
-      "question": "系统什么时候会拒答？",
+      "question": "单据转换规则怎么配置？",
       "expected_files": [
-        "操作手册"
+        "单据转换规则"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "当知识库中没有足够依据时，系统会明确拒答而不是编造答案。"
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 32,
-      "question": "在线表格多人同时编辑冲突了怎么办？",
+      "question": "工作流如何配置？",
       "expected_files": [
-        "操作手册"
+        "工作流"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "在线表格支持多人实时协同编辑，单元格级冲突按\"后写入优先\"解决。系统每 5 分钟自动保存版本快照，最多保留 10 个版本，用户可以随时回滚。"
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 33,
-      "question": "表格版本快照多久保存一次？保留多少个版本？",
+      "question": "下推和特定下推有什么区别？",
       "expected_files": [
-        "操作手册"
+        "下推"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "根据证据，在线表格系统每 5 分钟自动保存一次版本快照，最多保留 10 个版本。"
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 34,
-      "question": "密码有什么要求？",
+      "question": "促销活动怎么管理？",
       "expected_files": [
-        "操作手册"
+        "促销管理"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "根据证据，密码必须包含大小写字母和数字，且长度不少于 8 位。"
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 35,
-      "question": "财务类文档谁能看到？",
+      "question": "返利怎么管理？",
       "expected_files": [
-        "操作手册"
+        "返利管理"
       ],
       "should_answer": true,
-      "answered": true,
-      "reasonCode": null,
-      "first_hit_rank": 1,
-      "retrieval_hit": true,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "财务类文档仅对财务角色可见，普通管理员也无法查看。"
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
     },
     {
       "id": 36,
-      "question": "表格导出是大文件时要怎么处理？",
+      "question": "菜谱怎么综合管理？",
       "expected_files": [
-        "操作手册"
+        "菜谱综合管理"
+      ],
+      "should_answer": true,
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
+    },
+    {
+      "id": 37,
+      "question": "团餐怎么管理？",
+      "expected_files": [
+        "餐饮团餐管理"
+      ],
+      "should_answer": true,
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
+    },
+    {
+      "id": 38,
+      "question": "电子凭证池是什么？",
+      "expected_files": [
+        "电子凭证池"
       ],
       "should_answer": true,
       "answered": true,
@@ -584,16 +616,48 @@
       "retrieval_hit": true,
       "keyword_coverage": 1.0,
       "answer_ok": true,
-      "n_citations": 3,
-      "answer_excerpt": "根据证据，在线表格支持导出为 xlsx 文件。当文件较大时，导出任务在后台异步执行，完成后可在导出中心下载。"
+      "n_citations": 5,
+      "answer_excerpt": "电子凭证池是支持增值税电子普通发票、增值税电子专用发票、全面数字化的电子普通发票、全面数字化的电子专用发票、航空运输电子客票行程单、铁路电子客票、电子非税收入一般缴款书、财政电子票据等电子凭证的入池、查询和引出的系统。"
     },
     {
-      "id": 37,
-      "question": "公司年会定在哪个酒店举办？",
+      "id": 39,
+      "question": "报表基本操作怎么做？",
+      "expected_files": [
+        "报表基本操作"
+      ],
+      "should_answer": true,
+      "answered": false,
+      "reasonCode": "REQUEST_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
+    },
+    {
+      "id": 40,
+      "question": "固定资产期末怎么处理？",
+      "expected_files": [
+        "固定资产期末处理"
+      ],
+      "should_answer": true,
+      "answered": false,
+      "reasonCode": "ANSWER_FORMAT_ERROR",
+      "first_hit_rank": 0,
+      "retrieval_hit": false,
+      "keyword_coverage": 0.0,
+      "answer_ok": false,
+      "n_citations": 0,
+      "answer_excerpt": ""
+    },
+    {
+      "id": 41,
+      "question": "怎么用 Python 写一个网络爬虫？",
       "expected_files": [],
       "should_answer": false,
       "answered": false,
-      "reasonCode": "LACK_OF_EVIDENCE",
+      "reasonCode": "EVIDENCE_NOT_FOUND",
       "first_hit_rank": 0,
       "retrieval_hit": null,
       "keyword_coverage": 1.0,
@@ -602,8 +666,36 @@
       "answer_excerpt": ""
     },
     {
-      "id": 38,
-      "question": "公司股票代码是什么？",
+      "id": 42,
+      "question": "今天北京天气怎么样？",
+      "expected_files": [],
+      "should_answer": false,
+      "answered": false,
+      "reasonCode": "NONE",
+      "first_hit_rank": 0,
+      "retrieval_hit": null,
+      "keyword_coverage": 1.0,
+      "answer_ok": true,
+      "n_citations": 0,
+      "answer_excerpt": ""
+    },
+    {
+      "id": 43,
+      "question": "如何重装 Windows 操作系统？",
+      "expected_files": [],
+      "should_answer": false,
+      "answered": false,
+      "reasonCode": "EVIDENCE_NOT_FOUND",
+      "first_hit_rank": 0,
+      "retrieval_hit": null,
+      "keyword_coverage": 1.0,
+      "answer_ok": true,
+      "n_citations": 0,
+      "answer_excerpt": ""
+    },
+    {
+      "id": 44,
+      "question": "推荐几款好玩的游戏",
       "expected_files": [],
       "should_answer": false,
       "answered": false,
@@ -616,26 +708,12 @@
       "answer_excerpt": ""
     },
     {
-      "id": 39,
-      "question": "年度体检安排在几月份？",
+      "id": 45,
+      "question": "红烧肉怎么做才好吃？",
       "expected_files": [],
       "should_answer": false,
       "answered": false,
-      "reasonCode": "INSUFFICIENT_EVIDENCE",
-      "first_hit_rank": 0,
-      "retrieval_hit": null,
-      "keyword_coverage": 1.0,
-      "answer_ok": true,
-      "n_citations": 0,
-      "answer_excerpt": ""
-    },
-    {
-      "id": 40,
-      "question": "公司食堂的午餐价格是多少？",
-      "expected_files": [],
-      "should_answer": false,
-      "answered": false,
-      "reasonCode": "NO_EVIDENCE",
+      "reasonCode": "NONE",
       "first_hit_rank": 0,
       "retrieval_hit": null,
       "keyword_coverage": 1.0,

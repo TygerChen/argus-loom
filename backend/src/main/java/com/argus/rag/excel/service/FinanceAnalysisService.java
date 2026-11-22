@@ -216,8 +216,15 @@ public class FinanceAnalysisService {
     private List<FinanceLedgerRecord> loadRecords(LocalDate from, LocalDate to) {
         QueryWrapper<FinanceLedgerRecord> wrapper = new QueryWrapper<>();
         wrapper.orderByAsc("batch_id", "sheet_index", "excel_row");
-        // 第一版在内存过滤日期（月度流水数万行内可接受）；数据量增长后把
-        // ge/le 条件下推 SQL 即可，聚合接口不变。
+        // 日期条件下推 SQL（ge/le），避免全表拉进内存再过滤；
+        // from/to 均为 null 时仍全量（异常检测需要扫全部记录）。
+        if (from != null) {
+            wrapper.ge("business_date", from);
+        }
+        if (to != null) {
+            wrapper.le("business_date", to);
+        }
+        // 内存过滤作为防御性兜底（结果一致 + 剔除 null 业务日期；SQL 下推已减少传输量）
         return ledgerMapper.selectList(wrapper).stream()
                 .filter(r -> r.getBusinessDate() != null)
                 .filter(r -> from == null || !r.getBusinessDate().isBefore(from))

@@ -9,6 +9,9 @@ defineProps<{
 
 <template>
   <div class="stat-card" :style="{ '--stat-color': color || 'var(--brand-primary)' }">
+    <div v-if="$slots.icon" class="stat-card__icon">
+      <slot name="icon" />
+    </div>
     <div class="stat-card__value">
       <span class="stat-card__number">{{ value }}</span>
       <span v-if="unit" class="stat-card__unit">{{ unit }}</span>
@@ -44,6 +47,20 @@ defineProps<{
   width: 4px;
   background: linear-gradient(180deg, var(--stat-color), rgba(74, 144, 217, 0.2));
   border-radius: 0 2px 2px 0;
+}
+.stat-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--stat-color) 12%, transparent);
+  color: var(--stat-color);
+}
+.stat-card__icon svg {
+  width: 20px;
+  height: 20px;
 }
 .stat-card__value {
   display: flex;

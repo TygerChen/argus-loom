@@ -12,6 +12,8 @@ import { renderSafeMarkdown } from '@/utils/safeMarkdown'
 const props = defineProps<{
   visible: boolean
   document: DocumentItem | null
+  /** 引用证据：从问答引用点开时展示来源片段，并尽量在文本预览中高亮命中段 */
+  highlight?: { snippet: string; chunkIndex: number | null } | null
 }>()
 
 const emit = defineEmits<{
@@ -24,6 +26,35 @@ const error = ref('')
 const htmlContent = ref('')
 const textContent = ref('')
 const pdfUrl = ref('')
+
+/**
+ * 文本预览中的片段命中定位：片段来自引用快照（chunk 原文），预览文本来自
+ * documents.preview_text（仅前 200 字符），两者未必有交集——找不到就不内联
+ * 高亮，只显示顶部证据条，不伪造命中。
+ */
+const textHighlightParts = computed<{ before: string; hit: string; after: string } | null>(() => {
+  const snippet = props.highlight?.snippet?.trim()
+  if (!snippet || !textContent.value) return null
+  const haystack = textContent.value
+  const candidates = [snippet, snippet.length > 80 ? snippet.slice(0, 80) : '']
+  for (const needle of candidates) {
+    if (!needle) continue
+    const idx = haystack.indexOf(needle)
+    if (idx >= 0) {
+      return {
+        before: haystack.slice(0, idx),
+        hit: haystack.slice(idx, idx + needle.length),
+        after: haystack.slice(idx + needle.length),
+      }
+    }
+  }
+  return null
+})
+
+const citationChunkLabel = computed(() => {
+  const idx = props.highlight?.chunkIndex
+  return idx === null || idx === undefined ? '' : ` · 切片 #${idx}`
+})
 
 const normalizedFileExt = computed(() => {
   const ext = props.document?.fileExt?.toLowerCase() ?? ''
@@ -221,6 +252,18 @@ function formatDateTime(value: string): string {
     </template>
 
     <div class="reader-body">
+      <!-- 引用证据条：从问答引用点开时展示 AI 所依据的原文片段 -->
+      <div v-if="highlight?.snippet && !loading && !error" class="reader-citation">
+        <div class="reader-citation__label">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+          </svg>
+          <span>AI 引用的原文片段{{ citationChunkLabel }}</span>
+        </div>
+        <blockquote class="reader-citation__quote">{{ highlight.snippet }}</blockquote>
+      </div>
+
       <div v-if="loading" class="preview-state">
         <div class="spinner"></div>
         <p>&#x52A0;&#x8F7D;&#x9884;&#x89C8;&#x4E2D;...</p>
@@ -243,7 +286,8 @@ function formatDateTime(value: string): string {
       </div>
 
       <div v-else class="preview-text">
-        <pre>{{ textContent }}</pre>
+        <pre v-if="textHighlightParts">{{ textHighlightParts.before }}<mark class="reader-highlight">{{ textHighlightParts.hit }}</mark>{{ textHighlightParts.after }}</pre>
+        <pre v-else>{{ textContent }}</pre>
       </div>
     </div>
   </el-dialog>
@@ -348,6 +392,52 @@ function formatDateTime(value: string): string {
   background:
     linear-gradient(90deg, rgba(248, 250, 252, 0.78), rgba(255, 255, 255, 0.98) 24%, rgba(255, 255, 255, 0.98) 76%, rgba(248, 250, 252, 0.78)),
     var(--surface-subtle);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── 引用证据条 ── */
+.reader-citation {
+  flex-shrink: 0;
+  margin: 14px 20px 4px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: rgba(74, 144, 217, 0.05);
+  border: 1px solid rgba(74, 144, 217, 0.22);
+  border-left: 3px solid var(--brand-primary);
+  animation: fade-in 0.3s ease;
+}
+
+.reader-citation__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Poppins', 'Noto Sans SC', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--brand-primary);
+  margin-bottom: 8px;
+}
+
+.reader-citation__quote {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  max-height: 132px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 文本预览中的命中高亮 */
+.reader-highlight {
+  background: rgba(245, 166, 35, 0.32);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+  box-shadow: 0 0 0 1px rgba(245, 166, 35, 0.35);
 }
 
 .preview-state {
@@ -394,6 +484,8 @@ function formatDateTime(value: string): string {
 .preview-pdf {
   width: 100%;
   height: 100%;
+  min-height: 0;
+  flex: 1;
   padding: 18px;
 }
 
@@ -408,8 +500,17 @@ function formatDateTime(value: string): string {
 .preview-text,
 .preview-markdown-wrapper {
   height: 100%;
+  min-height: 0;
+  flex: 1;
   overflow-y: auto;
   padding: 34px clamp(22px, 5vw, 64px) 56px;
+}
+
+.preview-text {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 26px clamp(22px, 5vw, 64px) 56px;
 }
 
 .preview-text pre,

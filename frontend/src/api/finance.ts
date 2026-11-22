@@ -78,6 +78,51 @@ export interface PayrollRow {
   remark?: string
 }
 
+// ─────────────────────────────────────────────
+// 资金日报（个人报表流水线实例）
+// ─────────────────────────────────────────────
+
+export interface FundDailyExecution {
+  id: number
+  bizDate: string
+  status: string
+  pushStatus?: string
+  pushDetail?: string
+  errorMessage?: string
+  durationMs?: number
+  result?: string
+}
+
+export function uploadFundReportFile(file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return http.post('/finance/fund-daily/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }).then((res) => unwrap<Record<string, any>>(res))
+}
+
+export function listFundReportFiles() {
+  return http.get('/finance/fund-daily/files').then((res) => unwrap<Record<string, any>[]>(res))
+}
+
+export function deleteFundReportFile(fileName: string) {
+  return http.post('/finance/fund-daily/delete-file', null, { params: { fileName } })
+    .then((res) => unwrap<Record<string, any>>(res))
+}
+
+export function generateFundDaily(date: string) {
+  return http.post('/finance/fund-daily/generate', null, { params: { date }, timeout: 300000 })
+    .then((res) => unwrap<FundDailyExecution>(res))
+}
+
+export function getFundDaily(date: string) {
+  return http.get('/finance/fund-daily', { params: { date } }).then((res) => unwrap<FundDailyExecution>(res))
+}
+
+export function listFundDailyExecutions(from: string, to: string) {
+  return http.get('/finance/fund-daily/list', { params: { from, to } }).then((res) => unwrap<FundDailyExecution[]>(res))
+}
+
 export function getPayrollPage(month: string, pageNum = 1, pageSize = 100) {
   return http.get('/finance/payroll', { params: { month, pageNum, pageSize } })
     .then((res) => unwrap<Record<string, any>>(res))

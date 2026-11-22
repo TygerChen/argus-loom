@@ -13,7 +13,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * {@link AssistantAgentFacade} 流式/超时/缩写三组纯函数行为锁
  * （纯 JVM、static 同包直调、零构造——该类实例态含真实守护线程池，故不做实例化）。
- * <p>锁契约：normalizeStreamingDelta 剥离已累计前缀成增量、prefix 不匹配时原样返回；
+ * <p>锁契约：normalizeStreamingDelta 剥离已累计前缀成增量、prefix 不匹配时原样返回、
+ * 纯空白增量（换行/空格 chunk）透传不丢弃——旧 isBlank 过滤曾导致流式回答换行全丢；
  * isTimeoutException 沿 cause 链识别 TimeoutException（Reactor ReactiveException 包裹亦可命中）；
  * abbreviate 将 CRLF/换行折叠为空格并 trim、整段超 200 截断加省略号。</p>
  */
@@ -23,9 +24,19 @@ class AssistantAgentStreamingDeltaTest {
     // ---------- normalizeStreamingDelta ----------
 
     @Test
-    void nullOrBlankCandidateIsEmptyDelta() {
+    void nullOrEmptyCandidateIsEmptyDelta() {
         assertEquals("", AssistantAgentFacade.normalizeStreamingDelta(null, "已累计"));
-        assertEquals("", AssistantAgentFacade.normalizeStreamingDelta("   ", "已累计"));
+        assertEquals("", AssistantAgentFacade.normalizeStreamingDelta("", "已累计"));
+    }
+
+    @Test
+    void whitespaceOnlyCandidatePassesThrough() {
+        // 生产事故回归锁：模型常把换行/空格作为独立 chunk 下发（如"一"、"\n"、"二"）。
+        // 旧实现用 isBlank 过滤，把 "\n" 当空串丢弃 → 流式回答所有换行丢失、
+        // markdown 围栏全部失效（2026-11-08 修复）。纯空白增量是真实内容，必须透传。
+        assertEquals("\n", AssistantAgentFacade.normalizeStreamingDelta("\n", ""));
+        assertEquals("\n", AssistantAgentFacade.normalizeStreamingDelta("\n", "已累计"));
+        assertEquals("  ", AssistantAgentFacade.normalizeStreamingDelta("  ", "已累计"));
     }
 
     @Test

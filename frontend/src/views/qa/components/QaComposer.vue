@@ -217,7 +217,7 @@ defineExpose({ focus, setText })
 
 /* Shell */
 .qa-composer__shell {
-  background: #fff;
+  background: var(--surface-white);
   border: 1.5px solid var(--border-default);
   border-radius: 16px;
   padding: 12px 14px 10px;
@@ -371,7 +371,7 @@ defineExpose({ focus, setText })
 .qa-composer__stop-icon {
   width: 10px;
   height: 10px;
-  background: #fff;
+  background: var(--surface-white);
   border-radius: 2px;
   flex-shrink: 0;
 }

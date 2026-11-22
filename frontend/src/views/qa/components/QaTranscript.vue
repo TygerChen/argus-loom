@@ -89,7 +89,7 @@ watch(
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: #fff;
+  background: var(--surface-white);
   position: relative;
 }
 
@@ -99,7 +99,7 @@ watch(
   align-items: flex-end;
   padding: 18px 32px 14px;
   border-bottom: 1px solid var(--border-subtle);
-  background: rgba(255, 255, 255, 0.95);
+  background: color-mix(in srgb, var(--surface-white) 95%, transparent);
   backdrop-filter: blur(8px);
   position: sticky;
   top: 0;

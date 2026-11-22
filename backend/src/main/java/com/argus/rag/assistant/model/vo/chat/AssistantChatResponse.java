@@ -38,6 +38,10 @@ public record AssistantChatResponse(
         /**
          * 知识库引用来源列表
          */
-        List<AskQuestionResponse.Citation> citations
+        List<AskQuestionResponse.Citation> citations,
+        /**
+         * 待确认写提案（第十一步确认门；null=本次对话无写提案）
+         */
+        PendingProposalVO pendingProposal
 ) {
 }

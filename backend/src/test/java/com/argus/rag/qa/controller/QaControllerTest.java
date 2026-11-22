@@ -121,7 +121,8 @@ class QaControllerTest {
                 tokenFlux,
                 documents,
                 EvidenceLevel.SUFFICIENT,
-                new AtomicReference<>(recordId));
+                new AtomicReference<>(recordId),
+                new AtomicReference<>());
     }
 
     @Test

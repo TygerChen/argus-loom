@@ -24,6 +24,7 @@
             class="file-input"
             type="file"
             accept=".xlsx,.xls"
+            multiple
             @change="handleFileChange"
           />
         </div>
@@ -65,18 +66,18 @@
           @selection-change="handleSelectionChange"
         >
           <el-table-column type="selection" width="48" />
-          <el-table-column prop="id" label="ID" width="80" />
-          <el-table-column label="文档名称" min-width="240">
+          <el-table-column prop="id" label="ID" width="60" />
+          <el-table-column label="文档名称" min-width="200">
             <template #default="{ row }">
               <button class="doc-link" @click="openDocument(row.id)">
                 <span>{{ row.name }}</span>
               </button>
             </template>
           </el-table-column>
-          <el-table-column label="Sheet" width="90">
+          <el-table-column label="Sheet" width="80">
             <template #default="{ row }">{{ row.sheetCount || 0 }} 个</template>
           </el-table-column>
-          <el-table-column label="文件大小" width="120">
+          <el-table-column label="文件大小" width="100">
             <template #default="{ row }">{{ formatSize(row.fileSize) }}</template>
           </el-table-column>
           <el-table-column label="权限" width="90">
@@ -86,10 +87,10 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="更新时间" width="180">
+          <el-table-column label="更新时间" width="150">
             <template #default="{ row }">{{ formatTime(row.updateTime) }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="520" fixed="right">
+          <el-table-column label="操作" width="500" fixed="right">
             <template #default="{ row }">
               <el-button v-if="row.canEdit" size="small" type="primary" :icon="EditPen" @click="openDocument(row.id)">
                 编辑
@@ -269,30 +270,52 @@ function selectFile() {
 
 async function handleFileChange(event: Event) {
   const target = event.target as HTMLInputElement
-  const file = target.files?.[0]
-  if (!file) return
+  // 支持批量：顺序逐个上传（后端本就是一次一个文件，批量只循环同一接口）
+  const files = Array.from(target.files ?? [])
+  target.value = ''
+  if (files.length === 0) return
 
-  if (!/\.(xlsx|xls)$/i.test(file.name)) {
+  const valid = files.filter((f) => /\.(xlsx|xls)$/i.test(f.name))
+  const invalidCount = files.length - valid.length
+  if (valid.length === 0) {
     ElMessage.warning('请选择 .xlsx 或 .xls 文件')
-    target.value = ''
     return
+  }
+  if (invalidCount > 0) {
+    ElMessage.warning(`${invalidCount} 个非 Excel 文件已跳过`)
   }
 
   uploading.value = true
+  const failed: string[] = []
+  let lastDocumentId: number | null = null
   try {
-    const res = await uploadExcel(file)
-    const payload = res.data
-    if (!payload?.success) throw new Error(payload?.message || '上传失败')
-    const documentId = payload.data?.documentId
-    ElMessage.success(`上传成功，已解析 ${payload.data?.sheetCount || 0} 个 Sheet`)
-    if (documentId) router.push({ name: 'excel-editor', params: { id: documentId } })
-    else loadDocuments()
-  } catch (error: any) {
-    const msg = error?.response?.data?.message || error.message || '上传失败'
-    ElMessage.error(msg)
+    for (const file of valid) {
+      try {
+        const res = await uploadExcel(file)
+        const payload = res.data
+        if (!payload?.success) throw new Error(payload?.message || '上传失败')
+        if (payload.data?.documentId) lastDocumentId = payload.data.documentId
+        ElMessage.success(`${file.name}：上传成功，已解析 ${payload.data?.sheetCount || 0} 个 Sheet`)
+      } catch (error: any) {
+        const msg = error?.response?.data?.message || error.message || '上传失败'
+        failed.push(`${file.name}：${msg}`)
+      }
+    }
+    if (failed.length > 0) {
+      ElMessage({
+        type: 'warning',
+        message: `${valid.length - failed.length}/${valid.length} 个上传成功；失败：${failed.join('；')}`,
+        duration: 6000,
+      })
+    }
+    // 单文件成功保留原来的直达编辑器体验；批量则留在列表页刷新
+    if (valid.length === 1 && failed.length === 0 && lastDocumentId) {
+      router.push({ name: 'excel-editor', params: { id: lastDocumentId } })
+    } else {
+      loadDocuments()
+    }
   } finally {
     uploading.value = false
-    target.value = ''
   }
 }
 
@@ -555,7 +578,7 @@ h1 {
 
 .metric-accent {
   border-color: rgba(47, 125, 87, 0.24);
-  background: linear-gradient(180deg, #f5faf6, var(--dl-panel, #ffffff));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--dl-accent) 5%, var(--dl-panel)), var(--dl-panel));
 }
 
 .metric-accent strong {

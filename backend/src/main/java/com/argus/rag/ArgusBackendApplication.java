@@ -9,14 +9,14 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * 后端服务的 Spring Boot 启动类。
- * <p>聚合三个能力：{@code @EnableAsync} 开启异步、{@code @EnableScheduling} 开启定时任务、{@code @EnableRetry} 开启重试；通过 {@code @MapperScan} 自动扫描 mapper 包与长期记忆（longterm）包下的 MyBatis-Plus Mapper 接口，让它们启动即被 Spring 管理。</p>
+ * <p>聚合三个能力：{@code @EnableAsync} 开启异步、{@code @EnableScheduling} 开启定时任务、{@code @EnableRetry} 开启重试；通过 {@code @MapperScan} 自动扫描 mapper 包、长期记忆（longterm）包与系统设置（settings，BYOK 模型配置）包下的 MyBatis-Plus Mapper 接口，让它们启动即被 Spring 管理。</p>
  * <p>运行 {@code main} 即可拉起整个服务，是后端所有逻辑的入口。</p>
  */
 @SpringBootApplication
 @EnableAsync
 @EnableScheduling
 @EnableRetry
-@MapperScan({"com.argus.rag.**.mapper", "com.argus.rag.**.longterm"})
+@MapperScan({"com.argus.rag.**.mapper", "com.argus.rag.**.longterm", "com.argus.rag.settings"})
 public class ArgusBackendApplication {
 
     public static void main(String[] args) {

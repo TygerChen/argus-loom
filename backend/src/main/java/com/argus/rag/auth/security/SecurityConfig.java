@@ -47,6 +47,7 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtAuthenticationFilter jwtAuthenticationFilter,
+            org.springframework.beans.factory.ObjectProvider<com.argus.rag.common.task.EntryAuditService> entryAuditServiceProvider,
             ObjectMapper objectMapper
     ) throws Exception {
         http
@@ -85,6 +86,24 @@ public class SecurityConfig {
                         .authenticationEntryPoint(restAuthenticationEntryPoint(objectMapper))
                         .accessDeniedHandler(restAccessDeniedHandler(objectMapper)))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+        // 入口审计（V13）：挂在认证过滤器之后——认证已发生、身份可读（且尚未被清理），
+        // 授权 403 / 参数 400 / 限流 429 / 系统 500 全部在内层发生，finally 里状态码已定稿，
+        // 被拒请求从此留痕。审计是旁路：任何失败只告警，不影响主流程。
+        // 用 ObjectProvider 取 Bean：@WebMvcTest 测试切片只装配 Web 层、没有审计服务，
+        // 此时优雅跳过本过滤器（切片测的是安全规则本身），生产环境则始终挂载。
+        // 注意：这里必须内联构造、不声明为 @Bean——否则 Boot 会把它再注册一次为
+        // Servlet 顶层过滤器，同一请求会写两条 entry_log（JwtAuth 是 OncePerRequestFilter
+        // 双注册无害，但审计会真记账两次）。
+        com.argus.rag.common.task.EntryAuditService entryAuditService = entryAuditServiceProvider.getIfAvailable();
+        if (entryAuditService != null) {
+            http.addFilterAfter(new com.argus.rag.common.task.EntryAuditFilter(
+                            entryAuditService,
+                            java.util.EnumSet.of(
+                                    com.argus.rag.common.task.TaskChannel.KB_QA,
+                                    com.argus.rag.common.task.TaskChannel.ASSISTANT,
+                                    com.argus.rag.common.task.TaskChannel.KB_DOCUMENT)),
+                    JwtAuthenticationFilter.class);
+        }
         return http.build();
     }
 

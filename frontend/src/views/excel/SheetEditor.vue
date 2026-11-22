@@ -359,7 +359,7 @@ async function initDocument() {
     for (let index = 0; index < metas.length; index += 1) {
       const meta = metas[index]
       loading.setText(`正在加载 ${meta.sheetName || `Sheet${index + 1}`}...`)
-      // eslint-disable-next-line no-await-in-loop
+       
       celldataList.push(await fetchSheetCelldata(meta))
     }
 
@@ -388,7 +388,7 @@ async function fetchSheetCelldata(meta: any) {
 
   try {
     const MAX_INFLIGHT = 3
-    const results = new Array<{ celldata: any[] } | null>(batches.length)
+    const results: Array<{ celldata: any[] } | null> = Array.from({ length: batches.length }, () => null)
     let nextBatch = 0
 
     async function worker() {
@@ -482,6 +482,18 @@ function bootWorkbook(doc: any, metas: any[], celldataList: any[]) {
   activeWorkbookId = workbook.getId()
   sheetCount.value = workbook.getNumSheets()
   workbook.setEditable(canEdit.value)
+  // 冻结首行：把第 1 行当表头固定，长表格滚动时列名始终可见。
+  // 只对没有冻结过的表生效（尊重文档里已有的冻结配置）；
+  // 必须在 captureBaseline 之前执行——基线快照与后续保存的快照都包含冻结态，
+  // 避免被误判成结构变更；也早于编辑监听器挂载，不会给自己标脏。
+  try {
+    workbook.getSheets().forEach((ws: any) => {
+      const freeze = ws.getFreeze()
+      if (!freeze || !freeze.ySplit) ws.setFrozenRows(1)
+    })
+  } catch {
+    // 冻结失败不影响编辑主流程（纯视图增强）
+  }
   workbookAdapter.captureBaseline(workbook.save(), getCurrentSheetId())
   attachEditListener()
   connectCollab()
@@ -1083,7 +1095,7 @@ function avatarText(user: any) {
   min-height: 58px;
   padding: 10px 16px;
   border-bottom: 1px solid var(--dl-line);
-  background: rgba(255, 255, 255, 0.94);
+  background: color-mix(in srgb, var(--surface-white) 94%, transparent);
   box-shadow: 0 8px 24px rgba(20, 32, 24, 0.08);
 }
 
@@ -1143,7 +1155,7 @@ function avatarText(user: any) {
   font-size: 14px;
   font-weight: 600;
   outline: none;
-  background: #fff;
+  background: var(--surface-white);
   box-shadow: 0 0 0 2px rgba(47, 125, 87, 0.12);
 }
 
@@ -1160,7 +1172,7 @@ function avatarText(user: any) {
   padding: 3px 8px;
   border: 1px solid var(--dl-line);
   border-radius: 6px;
-  background: #fff;
+  background: var(--surface-white);
 }
 
 .collab-dot {
@@ -1256,7 +1268,7 @@ function avatarText(user: any) {
   gap: 10px;
   border: 1px solid var(--dl-line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.9);
+  background: color-mix(in srgb, var(--surface-white) 90%, transparent);
   color: var(--dl-muted);
 }
 

@@ -58,6 +58,24 @@ public class AssistantPromptContextBuilder {
             List<Long> groupIds,
             KbRouteStrategy routeStrategy
     ) {
+        return buildChatInstruction(userId, sessionId, toolMode, groupIds, routeStrategy, null);
+    }
+
+    /**
+     * 构建系统指令（带入口段产出的重载）。
+     * <p>第二步（理解任务）与第三步（制定方案）的产出以
+     * {@code <task_understanding>} / {@code <execution_plan>} 标签块注入分层 Prompt——
+     * 让 Agent 从"结构化目标 + 经代码校验的计划书"出发，而不是从模糊原话重新猜。
+     * 产出为空/失败时行为与旧签名完全一致（fail-soft）。</p>
+     */
+    public String buildChatInstruction(
+            Long userId,
+            Long sessionId,
+            AssistantToolMode toolMode,
+            List<Long> groupIds,
+            KbRouteStrategy routeStrategy,
+            com.argus.rag.assistant.model.AssistantTaskContext taskContext
+    ) {
         // 1. 基础规则层（从模板加载）
         String basePrompt = templateManager.render(BASE_TEMPLATE, Map.of());
         if (basePrompt.isEmpty()) {
@@ -111,6 +129,16 @@ public class AssistantPromptContextBuilder {
         // 用户消息通过 agent.call(userMessage) 单独传入，与 system instruction 天然分离，
         // 这本身就是 Prompt Injection 防护的最佳实践（文章第五部分第5节）。
         // <knowledge> 标签内容由 Agent 运行时工具调用结果动态注入，不由此处预先填充。
+
+        // 5. 入口段产出块（第二步理解 + 第三步方案）：结构化目标与经代码校验的计划书。
+        if (taskContext != null && !taskContext.isEmpty()) {
+            builder.append(System.lineSeparator()).append(System.lineSeparator());
+            builder.append(taskContext.understanding().asInstructionBlock());
+            if (taskContext.plan() != null && !taskContext.plan().isEmpty()) {
+                builder.append(System.lineSeparator()).append(System.lineSeparator());
+                builder.append(taskContext.plan().asInstructionBlock());
+            }
+        }
 
         return builder.toString().trim();
     }

@@ -68,7 +68,7 @@ class AskQuestionResponseTest {
 
     @Test
     void sevenArgConstructorKeepsAllFieldsAndShortcutEquivalent() {
-        AskQuestionResponse seven = new AskQuestionResponse(false, null, "ERR", "msg", null, null, 7L);
+        AskQuestionResponse seven = new AskQuestionResponse(false, null, "ERR", "msg", null, null, 7L, null);
         assertEquals("ERR", seven.reasonCode());
         assertNull(seven.evidenceOverview());
         assertEquals(7L, seven.recordId());

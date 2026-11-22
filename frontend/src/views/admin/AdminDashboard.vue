@@ -5,8 +5,11 @@ import { fetchGroups } from '@/api/group'
 import {
   fetchMetricsOverview,
   fetchPlatformStats,
+  fetchSystemHealth,
   type MetricsOverview,
   type Period,
+  type SystemHealth,
+  type SystemHealthComponent,
   type UsageStats,
 } from '@/api/metrics'
 import { fetchDocuments } from '@/api/document'
@@ -30,14 +33,51 @@ const quickActions = [
   { title: '群组管理', desc: '查看所有协作小组', icon: 'group', color: '#9B59B6', to: '/app/groups' },
 ]
 
-// ── 系统状态指示器 ──
-const systemStatus = [
-  { label: 'LLM 服务', ok: true, desc: 'agnes-3.0-flash 在线' },
-  { label: '向量数据库', ok: true, desc: 'PGvector 正常' },
-  { label: '搜索引擎', ok: true, desc: 'Elasticsearch 健康' },
-  { label: '对象存储', ok: true, desc: 'MinIO 可用' },
-  { label: '数据库', ok: true, desc: 'PostgreSQL 连接正常' },
-]
+const quickActionIcons: Record<string, string> = {
+  users: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  chart: '<path d="M3 3V16C3 17.1046 3.89543 18 5 18H19C20.1046 18 21 17.1046 21 16V8C21 6.89543 20.1046 6 19 6H12L10 3H5C3.89543 3 3 3.89543 3 5V3Z"/><path d="M7 14L10 10L13 12L17 8"/>',
+  doc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
+  group: '<circle cx="8" cy="7" r="3"/><circle cx="16" cy="7" r="3"/><path d="M2 20V19C2 16.7909 3.79086 15 6 15H10C12.2091 15 14 16.7909 14 19V20"/><path d="M14 15H16C18.2091 15 20 16.7909 20 19V20"/>',
+}
+
+// ── 系统健康（真实数据，来自 /actuator/health）──
+interface HealthRow {
+  label: string
+  ok: boolean
+  desc: string
+}
+const healthRows = ref<HealthRow[]>([])
+const healthError = ref('')
+const healthCheckedAt = ref('')
+const healthLoading = ref(false)
+
+function componentStatus(health: SystemHealth, key: string): SystemHealthComponent | null {
+  return health.components?.[key] ?? null
+}
+
+async function loadHealth() {
+  healthLoading.value = true
+  healthError.value = ''
+  try {
+    const health = await fetchSystemHealth()
+    const rows: HealthRow[] = [
+      { label: 'API 服务', ok: health.status === 'UP', desc: 'Spring Boot 后端' },
+    ]
+    const db = componentStatus(health, 'db')
+    if (db) rows.push({ label: '数据库', ok: db.status === 'UP', desc: 'PostgreSQL 数据源' })
+    const queue = componentStatus(health, 'queue')
+    if (queue) rows.push({ label: '任务队列', ok: queue.status === 'UP', desc: 'background_job 队列探针' })
+    const disk = componentStatus(health, 'diskSpace')
+    if (disk) rows.push({ label: '磁盘空间', ok: disk.status === 'UP', desc: '服务运行盘剩余容量' })
+    healthRows.value = rows
+    healthCheckedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+  } catch (err) {
+    healthError.value = extractApiError(err, '健康检查失败，请确认后端是否在线')
+    healthRows.value = []
+  } finally {
+    healthLoading.value = false
+  }
+}
 
 async function loadDashboard() {
   loading.value = true
@@ -63,7 +103,10 @@ async function loadDashboard() {
   }
 }
 
-onMounted(loadDashboard)
+onMounted(() => {
+  loadDashboard()
+  loadHealth()
+})
 
 function formatNumber(n: number): string {
   return n.toLocaleString('zh-CN')
@@ -134,7 +177,11 @@ function formatCost(n: number | undefined): string {
             class="admin-dashboard__action-card"
             :style="{ '--action-color': action.color }"
           >
-            <span class="admin-dashboard__action-dot" />
+            <span
+              class="admin-dashboard__action-icon"
+              :style="{ background: `color-mix(in srgb, ${action.color} 12%, transparent)`, color: action.color }"
+              v-html="quickActionIcons[action.icon] ? `<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'>${quickActionIcons[action.icon]}</svg>` : ''"
+            />
             <div class="admin-dashboard__action-body">
               <h4>{{ action.title }}</h4>
               <p>{{ action.desc }}</p>
@@ -146,12 +193,35 @@ function formatCost(n: number | undefined): string {
         </div>
       </section>
 
-      <!-- 系统状态 -->
+      <!-- 系统健康（真实 Actuator 数据） -->
       <section class="admin-dashboard__panel">
-        <h3 class="admin-dashboard__panel-title">系统状态</h3>
-        <div class="admin-dashboard__status-list">
+        <div class="admin-dashboard__panel-head">
+          <h3 class="admin-dashboard__panel-title">系统健康</h3>
+          <div class="admin-dashboard__panel-tools">
+            <span v-if="healthCheckedAt" class="admin-dashboard__health-time">
+              检查于 {{ healthCheckedAt }}
+            </span>
+            <button
+              class="admin-dashboard__health-refresh"
+              :disabled="healthLoading"
+              title="重新检查"
+              @click="loadHealth"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                <polyline points="21 3 21 9 15 9" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div v-if="healthError" class="admin-dashboard__health-error">{{ healthError }}</div>
+        <div v-else-if="healthLoading && healthRows.length === 0" class="admin-dashboard__status-list">
+          <div class="skeleton" style="height: 42px; border-radius: 8px" />
+          <div class="skeleton" style="height: 42px; border-radius: 8px" />
+        </div>
+        <div v-else class="admin-dashboard__status-list">
           <div
-            v-for="svc in systemStatus"
+            v-for="svc in healthRows"
             :key="svc.label"
             class="admin-dashboard__status-item"
           >
@@ -229,13 +299,67 @@ function formatCost(n: number | undefined): string {
   padding: 20px 24px;
 }
 .admin-dashboard__panel-title {
-  margin: 0 0 14px;
+  margin: 0;
   font-family: 'Poppins', sans-serif;
   font-size: 0.82rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--text-secondary);
   text-transform: uppercase;
+}
+
+/* Panel header with tools */
+.admin-dashboard__panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.admin-dashboard__panel-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.admin-dashboard__health-time {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+.admin-dashboard__health-refresh {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.admin-dashboard__health-refresh svg { width: 13px; height: 13px; }
+.admin-dashboard__health-refresh:hover:not(:disabled) {
+  color: var(--brand-primary);
+  border-color: rgba(74, 144, 217, 0.3);
+}
+.admin-dashboard__health-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
+.admin-dashboard__health-refresh svg { animation: none; }
+.admin-dashboard__health-refresh[disabled] svg { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.admin-dashboard__health-error {
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  color: #dc2626;
+  font-size: 0.8rem;
+}
+
+/* Give standalone panel titles their spacing back */
+.admin-dashboard__panel > .admin-dashboard__panel-title {
+  margin-bottom: 14px;
 }
 
 /* Quick actions */
@@ -254,11 +378,18 @@ function formatCost(n: number | undefined): string {
   box-shadow: 0 2px 12px rgba(0,0,0,0.04);
   transform: translateX(3px);
 }
-.admin-dashboard__action-dot {
-  width: 10px; height: 10px;
-  border-radius: 50%;
-  background: var(--action-color);
+.admin-dashboard__action-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   flex-shrink: 0;
+}
+.admin-dashboard__action-icon :deep(svg) {
+  width: 18px;
+  height: 18px;
 }
 .admin-dashboard__action-body { flex: 1; min-width: 0; }
 .admin-dashboard__action-body h4 {

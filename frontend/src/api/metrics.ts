@@ -141,6 +141,35 @@ export async function fetchGroupRank(period: Period, limit = 10): Promise<UsageR
 }
 
 // ─────────────────────────────────────────────
+// 系统健康（Actuator）
+// ─────────────────────────────────────────────
+
+export interface SystemHealthComponent {
+  status: string
+  details?: Record<string, unknown>
+}
+
+export interface SystemHealth {
+  status: string
+  components?: Record<string, SystemHealthComponent>
+}
+
+/**
+ * 读取 Spring Boot Actuator 健康端点（经 vite/nginx 同源代理 /actuator）。
+ * /actuator/health 在 SecurityConfig 中匿名放行，无需登录态；
+ * 组件级详情需要后端 management.endpoint.health.show-details: always。
+ * 注意：这里故意不走 http 实例（其 baseURL=/api 会拼出 /api/actuator），
+ * 也不套 ApiResponse 包装——actuator 返回的是原生健康 JSON。
+ */
+export async function fetchSystemHealth(): Promise<SystemHealth> {
+  const response = await fetch('/actuator/health', { headers: { Accept: 'application/json' } })
+  if (!response.ok) {
+    throw new Error(`健康检查端点返回 ${response.status}`)
+  }
+  return (await response.json()) as SystemHealth
+}
+
+// ─────────────────────────────────────────────
 // 工具函数
 // ─────────────────────────────────────────────
 

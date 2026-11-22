@@ -35,6 +35,18 @@ const success = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const dragging = ref(false)
 
+/** 批量上传：首个文件立即展示，其余排队顺序处理（复用单文件链路，含重复文件决策） */
+const pendingQueue = ref<File[]>([])
+const batchTotal = ref(0)
+const batchDone = ref(0)
+const skippedCount = ref(0)
+
+const batchInfo = computed(() =>
+  batchTotal.value > 1
+    ? `第 ${Math.min(batchDone.value + 1, batchTotal.value)} / ${batchTotal.value} 个`
+    : '',
+)
+
 const allowedExts = ['.txt', '.md', '.pdf', '.docx']
 const MAX_FILE_SIZE = 256 * 1024 * 1024
 const CHUNKED_THRESHOLD = 10 * 1024 * 1024
@@ -58,6 +70,10 @@ function resetState() {
   errorMsg.value = ''
   success.value = false
   dragging.value = false
+  pendingQueue.value = []
+  batchTotal.value = 0
+  batchDone.value = 0
+  skippedCount.value = 0
   chunked.reset()
 }
 
@@ -82,36 +98,42 @@ function validateFile(f: File): string | null {
   return null
 }
 
+/** 统一受理一批文件（选择与拖拽共用）：逐个校验，首个立现，其余入队 */
+function acceptFiles(files: File[]) {
+  const valid: File[] = []
+  let firstError: string | null = null
+  for (const f of files) {
+    const err = validateFile(f)
+    if (err) {
+      if (!firstError) firstError = err
+      continue
+    }
+    valid.push(f)
+  }
+  batchTotal.value = valid.length
+  batchDone.value = 0
+  skippedCount.value = files.length - valid.length
+  pendingQueue.value = valid.slice(1)
+  file.value = valid[0] ?? null
+  // 全部不合格才阻断报错；部分跳过时由队列提示行轻量说明，不挡上传
+  errorMsg.value = valid.length === 0 && firstError ? firstError : ''
+}
+
 function onFilePicked(e: Event) {
   const input = e.target as HTMLInputElement
-  const f = input.files?.[0]
-  if (!f) {
-    file.value = null
-    return
-  }
-  const err = validateFile(f)
-  if (err) {
-    errorMsg.value = err
-    file.value = null
-    return
-  }
-  errorMsg.value = ''
-  file.value = f
+  const files = Array.from(input.files ?? [])
+  // 读取后立即清空，保证"再次选择同一文件"也能触发 change
+  input.value = ''
+  if (files.length === 0) return
+  acceptFiles(files)
 }
 
 function onDrop(e: DragEvent) {
   e.preventDefault()
   dragging.value = false
-  const f = e.dataTransfer?.files?.[0]
-  if (!f) return
-  const err = validateFile(f)
-  if (err) {
-    errorMsg.value = err
-    file.value = null
-    return
-  }
-  errorMsg.value = ''
-  file.value = f
+  const files = Array.from(e.dataTransfer?.files ?? [])
+  if (files.length === 0) return
+  acceptFiles(files)
 }
 
 function onDragOver(e: DragEvent) {
@@ -144,12 +166,23 @@ async function startUpload(fileToUpload: File, duplicatePolicy?: 'REUSE' | 'CREA
       })
     }
     success.value = true
-    file.value = null
-    duplicateFile.value = null
-    setTimeout(() => {
-      emit('uploaded')
-      emit('update:visible', false)
-    }, 800)
+    batchDone.value += 1
+    emit('uploaded')
+    const next = pendingQueue.value.shift()
+    if (next) {
+      // 批量模式：短暂展示成功态后自动续传下一个；列表随每个文件完成即时刷新
+      setTimeout(() => {
+        success.value = false
+        file.value = next
+        startUpload(next)
+      }, 600)
+    } else {
+      file.value = null
+      duplicateFile.value = null
+      setTimeout(() => {
+        emit('update:visible', false)
+      }, 800)
+    }
   } catch (err) {
     if (!chunked.error) {
       errorMsg.value = extractApiError(err, '上传文件失败')
@@ -259,7 +292,7 @@ function formatSize(bytes: number): string {
             <strong>点击选择文件</strong>
             <span>或将文件拖拽到此处</span>
           </p>
-          <p class="upload-dialog__zone-hint">支持 TXT · MD · PDF · DOCX，最大 256 MB</p>
+          <p class="upload-dialog__zone-hint">支持 TXT · MD · PDF · DOCX，最大 256 MB，可多选 / 批量拖入</p>
         </template>
         <template v-else>
           <div class="upload-dialog__file-icon">
@@ -270,6 +303,11 @@ function formatSize(bytes: number): string {
           </div>
           <p class="upload-dialog__file-name">{{ file.name }}</p>
           <p class="upload-dialog__file-size">{{ formatSize(file.size) }}</p>
+          <p v-if="batchTotal > 1 || skippedCount > 0" class="upload-dialog__file-queue">
+            <template v-if="batchTotal > 1">共 {{ batchTotal }} 个文件，排队顺序上传</template>
+            <template v-if="batchTotal > 1 && skippedCount > 0">；</template>
+            <template v-if="skippedCount > 0">{{ skippedCount }} 个因类型或大小不符被跳过</template>
+          </p>
           <button
             class="upload-dialog__file-change"
             type="button"
@@ -284,12 +322,16 @@ function formatSize(bytes: number): string {
         ref="fileInputRef"
         type="file"
         accept=".txt,.md,.pdf,.docx"
+        multiple
         class="upload-dialog__file-input"
         @change="onFilePicked"
       />
 
       <!-- Progress -->
       <div v-if="isUploading || success" class="upload-dialog__progress">
+        <div v-if="batchTotal > 1" class="upload-dialog__stage">
+          批量上传 {{ batchInfo }}：{{ file?.name }}
+        </div>
         <div v-if="isChunkedActive && chunked.stage" class="upload-dialog__stage">
           <span v-if="chunked.stage === 'hashing'">{{ chunked.hashingProgress || '正在计算文件指纹...' }}</span>
           <span v-else-if="chunked.stage === 'init'">正在初始化上传...</span>
@@ -522,6 +564,13 @@ function formatSize(bytes: number): string {
   color: var(--text-muted);
 }
 
+.upload-dialog__file-queue {
+  margin: 2px 0 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 .upload-dialog__file-change {
   margin-top: 6px;
   padding: 4px 14px;
@@ -529,7 +578,7 @@ function formatSize(bytes: number): string {
   font-size: 0.78rem;
   font-weight: 600;
   color: var(--brand-primary);
-  background: #fff;
+  background: var(--surface-white);
   border: 1px solid rgba(74, 144, 217, 0.3);
   border-radius: 100px;
   cursor: pointer;
@@ -598,7 +647,7 @@ function formatSize(bytes: number): string {
 .upload-dialog__duplicate {
   margin-top: 14px;
   padding: 14px 16px;
-  background: #fffbeb;
+  background: color-mix(in srgb, #f59e0b 9%, var(--surface-white));
   border: 1px solid #fcd34d;
   border-radius: 10px;
 }
@@ -654,7 +703,7 @@ function formatSize(bytes: number): string {
   font-size: 0.78rem;
   font-weight: 600;
   color: #dc2626;
-  background: #fff;
+  background: var(--surface-white);
   border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: 100px;
   cursor: pointer;

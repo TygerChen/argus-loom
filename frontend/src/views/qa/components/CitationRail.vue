@@ -157,7 +157,7 @@ function iconClass(fileName: string): string {
   flex-shrink: 0;
   width: 260px;
   padding: 12px 14px 12px;
-  background: #fff;
+  background: var(--surface-white);
   border: 1px solid var(--border-default);
   border-radius: 12px;
   text-align: left;

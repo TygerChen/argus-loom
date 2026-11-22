@@ -2,6 +2,7 @@ package com.argus.rag.excel.controller;
 
 import com.argus.rag.auth.CurrentUserService;
 import com.argus.rag.common.api.ApiResponse;
+import com.argus.rag.common.exception.BusinessException;
 import com.argus.rag.excel.entity.FinanceImportBatch;
 import com.argus.rag.excel.entity.FinanceLedgerRecord;
 import com.argus.rag.excel.entity.FinancePeriod;
@@ -96,9 +97,11 @@ public class FinanceImportController {
             data.put("status", batch.getStatus());
             data.put("errorSummary", batch.getErrorSummary());
             return ApiResponse.success(data);
+        } catch (BusinessException e) {
+            throw e; // 业务异常冒泡给全局处理器，保留安全文案 + code
         } catch (Exception e) {
             log.error("财务导入失败", e);
-            return new ApiResponse<>(false, null, "财务导入失败: " + e.getMessage());
+            return new ApiResponse<>(false, null, "财务导入失败，请稍后重试");
         }
     }
 
@@ -152,9 +155,11 @@ public class FinanceImportController {
             data.put("batchVersion", batch.getBatchVersion());
             data.put("isCurrent", batch.getIsCurrent());
             return ApiResponse.success(data);
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
-            log.warn("财务批次切换失败: batchId={}, error={}", batchId, e.getMessage());
-            return new ApiResponse<>(false, null, "切换失败: " + e.getMessage());
+            log.error("财务批次切换失败: batchId={}", batchId, e);
+            return new ApiResponse<>(false, null, "切换失败，请稍后重试");
         }
     }
 
@@ -215,9 +220,11 @@ public class FinanceImportController {
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("updatedCount", financeImportService.batchUpdateRecords(requests));
             return ApiResponse.success(result);
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
-            log.warn("财务明细批量更新失败: error={}", e.getMessage());
-            return new ApiResponse<>(false, null, "更新失败: " + e.getMessage());
+            log.error("财务明细批量更新失败", e);
+            return new ApiResponse<>(false, null, "更新失败，请稍后重试");
         }
     }
 
@@ -233,9 +240,11 @@ public class FinanceImportController {
                     periodMonth, currentUserService.getRequiredCurrentUser().userId(),
                     body == null ? null : body.get("reason"));
             return ApiResponse.success(period);
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
-            log.warn("关闭财务期间失败: period={}, error={}", periodMonth, e.getMessage());
-            return new ApiResponse<>(false, null, "关闭失败: " + e.getMessage());
+            log.error("关闭财务期间失败: period={}", periodMonth, e);
+            return new ApiResponse<>(false, null, "关闭失败，请稍后重试");
         }
     }
 
@@ -251,9 +260,11 @@ public class FinanceImportController {
                     periodMonth, currentUserService.getRequiredCurrentUser().userId(),
                     body == null ? null : body.get("reason"));
             return ApiResponse.success(period);
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
-            log.warn("重新打开财务期间失败: period={}, error={}", periodMonth, e.getMessage());
-            return new ApiResponse<>(false, null, "重开失败: " + e.getMessage());
+            log.error("重新打开财务期间失败: period={}", periodMonth, e);
+            return new ApiResponse<>(false, null, "重开失败，请稍后重试");
         }
     }
 

@@ -26,6 +26,7 @@ import java.util.concurrent.TimeoutException;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -61,15 +62,17 @@ class AssistantAgentFacadeChatTest {
         metrics = mock(LlmDialogueMetrics.class);
         reactAgent = mock(ReactAgent.class);
 
-        when(agentFactory.createAgent(any(), any(), any(), any(), any())).thenReturn(reactAgent);
-        when(runnableConfigFactory.create(any(), any(), any(), any(), any()))
+        when(agentFactory.createAgent(any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(reactAgent);
+        when(runnableConfigFactory.create(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(RunnableConfig.builder().build());
-        when(promptContextBuilder.buildChatInstruction(any(), any(), any(), any(), any()))
+        when(promptContextBuilder.buildChatInstruction(any(), any(), any(), any(), any(), any()))
                 .thenReturn("instruction");
         when(metrics.start()).thenReturn(mock(Timer.Sample.class));
 
-        facade = new AssistantAgentFacade(agentFactory, runnableConfigFactory, promptContextBuilder,
-                new ToolEventEmitter(), metrics);
+        facade = new AssistantAgentFacade(agentFactory,
+                org.mockito.Mockito.mock(com.argus.rag.settings.UserChatModelService.class),
+                runnableConfigFactory, promptContextBuilder, new ToolEventEmitter(), metrics);
     }
 
     // ---------- helpers ----------
@@ -104,7 +107,7 @@ class AssistantAgentFacadeChatTest {
     void chatSuccessReturnsReplyAndMarksMetrics() {
         mockCall(new AssistantMessage("回答文本"));
         AssistantAgentResult res = facade.chat(7L, 10L, AssistantToolMode.CHAT,
-                List.of(), KbRouteStrategy.AUTO, "你好");
+                List.of(), KbRouteStrategy.AUTO, "你好", null);
         assertEquals("回答文本", res.reply());
         assertEquals(List.of(), res.citations());
         verify(metrics).finish(any(Timer.Sample.class), eq("assistant"), eq("sync"), eq(true));
@@ -114,7 +117,7 @@ class AssistantAgentFacadeChatTest {
     void chatNullReplyThrowsAssistantEmpty() {
         mockCall(null);
         BusinessException e = assertThrows(BusinessException.class,
-                () -> facade.chat(7L, 10L, AssistantToolMode.CHAT, List.of(), KbRouteStrategy.AUTO, "你好"));
+                () -> facade.chat(7L, 10L, AssistantToolMode.CHAT, List.of(), KbRouteStrategy.AUTO, "你好", null));
         assertEquals("助手返回内容为空", e.getMessage());
     }
 
@@ -122,7 +125,7 @@ class AssistantAgentFacadeChatTest {
     void chatWhitespaceReplyThrowsAssistantEmpty() {
         mockCall(new AssistantMessage("   "));
         BusinessException e = assertThrows(BusinessException.class,
-                () -> facade.chat(7L, 10L, AssistantToolMode.CHAT, List.of(), KbRouteStrategy.AUTO, "你好"));
+                () -> facade.chat(7L, 10L, AssistantToolMode.CHAT, List.of(), KbRouteStrategy.AUTO, "你好", null));
         assertEquals("助手返回内容为空", e.getMessage());
     }
 
@@ -131,7 +134,7 @@ class AssistantAgentFacadeChatTest {
         BusinessException original = new BusinessException("原错误");
         mockCallThrows(original);
         BusinessException e = assertThrows(BusinessException.class,
-                () -> facade.chat(7L, 10L, AssistantToolMode.CHAT, List.of(), KbRouteStrategy.AUTO, "你好"));
+                () -> facade.chat(7L, 10L, AssistantToolMode.CHAT, List.of(), KbRouteStrategy.AUTO, "你好", null));
         assertEquals("原错误", e.getMessage());
     }
 
@@ -139,9 +142,11 @@ class AssistantAgentFacadeChatTest {
     void chatPlainGraphErrorWrappedAsRetryable() {
         mockCallThrows(new RuntimeException("boom"));
         RuntimeException e = assertThrows(RuntimeException.class,
-                () -> facade.chat(7L, 10L, AssistantToolMode.CHAT, List.of(), KbRouteStrategy.AUTO, "你好"));
+                () -> facade.chat(7L, 10L, AssistantToolMode.CHAT, List.of(), KbRouteStrategy.AUTO, "你好", null));
         assertNotNull(e.getCause());
-        assertEquals("boom", e.getCause().getMessage());
+        // 显式重试循环耗尽后包装为 BusinessException("助手调用失败")，cause 链保留原始消息
+        assertTrue(String.valueOf(e.getCause().getMessage()).contains("boom"),
+                "cause 应保留原始错误信息: " + e.getCause().getMessage());
     }
 
     // ---------- streamChat（流式） ----------
@@ -155,7 +160,7 @@ class AssistantAgentFacadeChatTest {
 
         List<String> deltas = collectDeltas();
         AssistantAgentResult res = facade.streamChat(7L, 10L, AssistantToolMode.CHAT, List.of(),
-                KbRouteStrategy.AUTO, "你好", text -> deltas.add(text), ev -> {
+                KbRouteStrategy.AUTO, "你好", null, text -> deltas.add(text), ev -> {
                 });
         assertEquals(List.of("你", "好"), deltas);
         assertEquals("你好", res.reply());
@@ -169,7 +174,7 @@ class AssistantAgentFacadeChatTest {
                 streamingNode("全文答复", OutputType.AGENT_MODEL_FINISHED)));
         List<String> deltas = collectDeltas();
         AssistantAgentResult res = facade.streamChat(7L, 10L, AssistantToolMode.CHAT, List.of(),
-                KbRouteStrategy.AUTO, "你好", deltas::add, ev -> {
+                KbRouteStrategy.AUTO, "你好", null, deltas::add, ev -> {
         });
         assertEquals(List.of("全文答复"), deltas);
         assertEquals("全文答复", res.reply());
@@ -185,7 +190,7 @@ class AssistantAgentFacadeChatTest {
                 new StreamingOutput<>(withToolCalls, "agent", "ctx", null, OutputType.AGENT_MODEL_FINISHED)));
         BusinessException e = assertThrows(BusinessException.class,
                 () -> facade.streamChat(7L, 10L, AssistantToolMode.CHAT, List.of(), KbRouteStrategy.AUTO,
-                        "你好", s -> { }, ev -> { }));
+                        "你好", null, s -> { }, ev -> { }));
         assertEquals("助手返回内容为空", e.getMessage());
     }
 
@@ -194,7 +199,7 @@ class AssistantAgentFacadeChatTest {
         mockStreamReturns(Flux.<NodeOutput>just(mock(NodeOutput.class)));
         BusinessException e = assertThrows(BusinessException.class,
                 () -> facade.streamChat(7L, 10L, AssistantToolMode.CHAT, List.of(), KbRouteStrategy.AUTO,
-                        "你好", s -> { }, ev -> { }));
+                        "你好", null, s -> { }, ev -> { }));
         assertEquals("助手返回内容为空", e.getMessage());
     }
 
@@ -203,7 +208,7 @@ class AssistantAgentFacadeChatTest {
         mockStreamReturns(Flux.<NodeOutput>error(new RuntimeException("graph boom")));
         BusinessException e = assertThrows(BusinessException.class,
                 () -> facade.streamChat(7L, 10L, AssistantToolMode.CHAT, List.of(), KbRouteStrategy.AUTO,
-                        "你好", s -> { }, ev -> { }));
+                        "你好", null, s -> { }, ev -> { }));
         assertEquals("助手调用失败", e.getMessage());
         assertEquals("graph boom", e.getCause().getMessage());
     }
@@ -213,7 +218,7 @@ class AssistantAgentFacadeChatTest {
         mockStreamReturns(Flux.<NodeOutput>error(new TimeoutException("model hang")));
         BusinessException e = assertThrows(BusinessException.class,
                 () -> facade.streamChat(7L, 10L, AssistantToolMode.CHAT, List.of(), KbRouteStrategy.AUTO,
-                        "你好", s -> { }, ev -> { }));
+                        "你好", null, s -> { }, ev -> { }));
         assertEquals("模型服务暂时不可用，请稍后重试。", e.getMessage());
     }
 }

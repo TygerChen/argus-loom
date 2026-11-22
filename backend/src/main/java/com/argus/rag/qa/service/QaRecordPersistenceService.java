@@ -86,6 +86,7 @@ public class QaRecordPersistenceService {
             QaRecordEntity record = new QaRecordEntity();
             record.setUserId(command.userId());
             record.setGroupId(command.groupId());
+            record.setConversationId(command.conversationId());
             record.setQuestion(command.question());
             record.setAnswer(response == null ? null : response.answer());
             record.setAnswered(response != null && response.answered());
@@ -209,7 +210,8 @@ public class QaRecordPersistenceService {
             QaChatService.UsageInfo usage,
             List<Document> evidenceDocuments,
             boolean success,
-            String errorMessage
+            String errorMessage,
+            Long conversationId
     ) {
     }
 }

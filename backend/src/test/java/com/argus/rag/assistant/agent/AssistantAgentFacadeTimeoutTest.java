@@ -42,19 +42,21 @@ class AssistantAgentFacadeTimeoutTest {
     @Test
     void streamChatTimesOutInsteadOfHanging() throws Exception {
         // 模型侧永远不产出任何 token → 触发总超时
-        when(agentFactory.createAgent(any(), any(), any(), any(), any())).thenReturn(reactAgent);
-        when(runnableConfigFactory.create(any(), any(), any(), any(), any()))
+        when(agentFactory.createAgent(any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(reactAgent);
+        when(runnableConfigFactory.create(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(RunnableConfig.builder().build());
-        when(promptContextBuilder.buildChatInstruction(any(), any(), any(), any(), any())).thenReturn("instruction");
+        when(promptContextBuilder.buildChatInstruction(any(), any(), any(), any(), any(), any())).thenReturn("instruction");
         when(reactAgent.stream(anyString(), any(RunnableConfig.class))).thenReturn(Flux.never());
 
         AssistantAgentFacade facade = new AssistantAgentFacade(
-                agentFactory, runnableConfigFactory, promptContextBuilder, new ToolEventEmitter(),
+                agentFactory, org.mockito.Mockito.mock(com.argus.rag.settings.UserChatModelService.class),
+                runnableConfigFactory, promptContextBuilder, new ToolEventEmitter(),
                 new LlmDialogueMetrics(new SimpleMeterRegistry()));
 
         // llmTimeoutSeconds 由 @Value 注入，单测下为 0 → Math.max(1, 0)=1s，超时后抛可读降级文案
         assertThatThrownBy(() -> facade.streamChat(
-                1L, 10L, AssistantToolMode.CHAT, List.of(), KbRouteStrategy.AUTO, "你好",
+                1L, 10L, AssistantToolMode.CHAT, List.of(), KbRouteStrategy.AUTO, "你好", null,
                 text -> {
                 }, event -> {
                 }))
@@ -69,10 +71,11 @@ class AssistantAgentFacadeTimeoutTest {
      */
     @Test
     void syncChatTimesOutInsteadOfHanging() throws Exception {
-        when(agentFactory.createAgent(any(), any(), any(), any(), any())).thenReturn(reactAgent);
-        when(runnableConfigFactory.create(any(), any(), any(), any(), any()))
+        when(agentFactory.createAgent(any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(reactAgent);
+        when(runnableConfigFactory.create(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(RunnableConfig.builder().build());
-        when(promptContextBuilder.buildChatInstruction(any(), any(), any(), any(), any()))
+        when(promptContextBuilder.buildChatInstruction(any(), any(), any(), any(), any(), any()))
                 .thenReturn("instruction");
         // 同步执行永不返回 → 竞时触发超时（立即能识别为“暂时不可用”）
         when(reactAgent.call(anyString(), any(RunnableConfig.class))).thenAnswer(invocation -> {
@@ -82,11 +85,12 @@ class AssistantAgentFacadeTimeoutTest {
         });
 
         AssistantAgentFacade facade = new AssistantAgentFacade(
-                agentFactory, runnableConfigFactory, promptContextBuilder, new ToolEventEmitter(),
+                agentFactory, org.mockito.Mockito.mock(com.argus.rag.settings.UserChatModelService.class),
+                runnableConfigFactory, promptContextBuilder, new ToolEventEmitter(),
                 new LlmDialogueMetrics(new SimpleMeterRegistry()));
 
         assertThatThrownBy(() -> facade.chat(
-                1L, 10L, AssistantToolMode.CHAT, List.of(), KbRouteStrategy.AUTO, "你好"))
+                1L, 10L, AssistantToolMode.CHAT, List.of(), KbRouteStrategy.AUTO, "你好", null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("暂时不可用");
     }

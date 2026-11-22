@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue'
-import type { AssistantCitationItem, AssistantToolMode } from '@/types/assistant'
+import type { AssistantCitationItem, AssistantToolMode, PendingProposal } from '@/types/assistant'
 import AssistantMessage, { type UiAssistantMessage } from './AssistantMessage.vue'
 import ModeSwitcher from './ModeSwitcher.vue'
 
@@ -18,10 +18,28 @@ const emit = defineEmits<{
   'update:mode': [mode: AssistantToolMode]
   'inspect-citation': [citation: AssistantCitationItem]
   retry: []
+  'confirm-proposal': [proposal: PendingProposal]
+  'cancel-proposal': [proposal: PendingProposal]
 }>()
 
 const scrollRef = ref<HTMLElement | null>(null)
 const isAtBottom = ref(true)
+/** localId → 消息组件实例（回写提案终态用） */
+const messageRefs = new Map<string, InstanceType<typeof AssistantMessage>>()
+
+function setMessageRef(localId: string, el: unknown) {
+  if (el) {
+    messageRefs.set(localId, el as InstanceType<typeof AssistantMessage>)
+  } else {
+    messageRefs.delete(localId)
+  }
+}
+
+function setProposalResult(localId: string, state: 'CONFIRMED' | 'CANCELLED' | 'FAILED', error?: string) {
+  messageRefs.get(localId)?.setProposalResult(state, error)
+}
+
+defineExpose({ setProposalResult })
 
 function scrollToBottom(smooth = true) {
   const el = scrollRef.value
@@ -92,10 +110,13 @@ watch(
         <AssistantMessage
           v-for="m in messages"
           :key="m.localId"
+          :ref="(el) => setMessageRef(m.localId, el)"
           :message="m"
           :groups="groups ?? []"
           @inspect-citation="(c) => emit('inspect-citation', c)"
           @retry="emit('retry')"
+          @confirm-proposal="(p) => emit('confirm-proposal', p)"
+          @cancel-proposal="(p) => emit('cancel-proposal', p)"
         />
       </div>
     </div>
@@ -122,7 +143,7 @@ watch(
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: #fff;
+  background: var(--surface-white);
   position: relative;
 }
 
@@ -138,7 +159,7 @@ watch(
   align-items: center;
   padding: 16px 32px 14px;
   border-bottom: 1px solid var(--border-subtle);
-  background: rgba(255, 255, 255, 0.95);
+  background: color-mix(in srgb, var(--surface-white) 95%, transparent);
   backdrop-filter: blur(8px);
   position: sticky;
   top: 0;

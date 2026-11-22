@@ -94,7 +94,7 @@ class StructuredDataQueryToolRoleGateTest {
         login(SystemRole.USER);
         when(excelPermissionService.canView(5L)).thenReturn(false);
 
-        assertThatThrownBy(() -> tool().getTableSchema(5L))
+        assertThatThrownBy(() -> tool().getTableSchema(5L, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("未找到该表格的结构化数据。");
 
@@ -108,7 +108,7 @@ class StructuredDataQueryToolRoleGateTest {
         when(excelPermissionService.canView(5L)).thenReturn(true);
         when(retrievalService.buildStructuredContext(5L)).thenReturn("列A | 列B | 列C");
 
-        tool().getTableSchema(5L);
+        tool().getTableSchema(5L, null);
 
         verify(retrievalService).buildStructuredContext(5L);
     }
@@ -119,7 +119,7 @@ class StructuredDataQueryToolRoleGateTest {
         login(SystemRole.ADMIN);
         when(excelPermissionService.canView(5L)).thenReturn(false);
 
-        assertThatThrownBy(() -> tool().searchTableData("关键词", 5L))
+        assertThatThrownBy(() -> tool().searchTableData("关键词", 5L, null))
                 .isInstanceOf(BusinessException.class);
 
         verify(retrievalService, never()).fuzzySearch(any(), any());
@@ -131,7 +131,7 @@ class StructuredDataQueryToolRoleGateTest {
         login(SystemRole.ADMIN);
         when(excelPermissionService.canView(404L)).thenReturn(false);
 
-        assertThatThrownBy(() -> tool().getTableSchema(404L))
+        assertThatThrownBy(() -> tool().getTableSchema(404L, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("未找到该表格的结构化数据。");
 
@@ -172,7 +172,7 @@ class StructuredDataQueryToolRoleGateTest {
         when(excelPermissionService.canView(88L)).thenReturn(true);
         when(retrievalService.buildStructuredContext(88L)).thenReturn("列A | 列B");
 
-        String schema = tool().getTableSchema(88L);
+        String schema = tool().getTableSchema(88L, null);
 
         assertThat(schema).contains("列A");
         verify(excelPermissionService).canView(88L);
@@ -187,7 +187,7 @@ class StructuredDataQueryToolRoleGateTest {
         when(ragDocumentMapper.selectById(88L)).thenReturn(null);
         when(excelPermissionService.canView(88L)).thenReturn(false);
 
-        assertThatThrownBy(() -> tool().getTableSchema(88L))
+        assertThatThrownBy(() -> tool().getTableSchema(88L, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("未找到该表格的结构化数据。");
 
@@ -204,7 +204,7 @@ class StructuredDataQueryToolRoleGateTest {
         when(excelPermissionService.canView(5L)).thenReturn(true);
         when(retrievalService.buildStructuredContext(5L)).thenReturn("列A");
 
-        String schema = tool().getTableSchema(5L);
+        String schema = tool().getTableSchema(5L, null);
 
         assertThat(schema).contains("列A");
     }

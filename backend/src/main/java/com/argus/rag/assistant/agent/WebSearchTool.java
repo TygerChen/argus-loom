@@ -4,6 +4,7 @@ import com.argus.rag.engine.freeweb.FreeWebSearchService;
 import com.argus.rag.engine.freeweb.WebSearchResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
@@ -30,15 +31,27 @@ public class WebSearchTool {
     );
 
     private final FreeWebSearchService webSearchService;
+    /** 新链路：腾讯元宝 SearchPro（Key 来自 YUANBAO_SEARCH_API_KEY，未配置时自动降级必应免费通道） */
+    private final com.argus.rag.engine.yuanbao.YuanbaoSearchClient yuanbaoSearchClient;
 
-    public WebSearchTool(FreeWebSearchService freeWebSearchService) {
+    public WebSearchTool(FreeWebSearchService freeWebSearchService,
+                         com.argus.rag.engine.yuanbao.YuanbaoSearchClient yuanbaoSearchClient) {
         this.webSearchService = freeWebSearchService;
+        this.yuanbaoSearchClient = yuanbaoSearchClient;
     }
 
-    @Tool(description = "搜索互联网获取实时信息（免费通道，无需API Key）。当用户询问新闻、最新事件、实时动态、价格行情或知识库中没有的公开信息时使用")
+    @Tool(description = "搜索互联网获取实时信息（无需API Key）。当用户询问新闻、最新事件、实时动态、价格行情或知识库中没有的公开信息时使用")
     public String webSearch(
-            @ToolParam(description = "搜索关键词") String query
+            @ToolParam(description = "搜索关键词") String query,
+            ToolContext toolContext
     ) {
+        // 第六步（调用工具）：执行门禁——在册/风险/预算
+        ToolExecutionGuard.check(toolContext, "webSearch");
+        // 双链路：元宝 SearchPro（配置了 Key 时优先）→ 必应免费通道降级
+        String yuanbaoResult = searchViaYuanbao(query);
+        if (yuanbaoResult != null) {
+            return yuanbaoResult;
+        }
         try {
             List<WebSearchResult> results = webSearchService.search(query);
             log.info("WebSearchTool: query={}, results count={}", query, results == null ? 0 : results.size());
@@ -79,9 +92,42 @@ public class WebSearchTool {
                 }
                 builder.append("\n");
             }
-            return builder.toString().trim();
+            return ToolExecutionGuard.wrapUntrusted(builder.toString().trim());
         } catch (Exception e) {
             return "搜索失败: " + e.getMessage();
+        }
+    }
+
+    /**
+     * 元宝 SearchPro 链路（配置了 Key 时优先）。
+     *
+     * @return 搜索结果 Markdown；Key 未配置或调用失败返回 null（降级必应通道）
+     */
+    private String searchViaYuanbao(String query) {
+        if (!yuanbaoSearchClient.isAvailable()) {
+            return null;
+        }
+        try {
+            List<com.argus.rag.engine.yuanbao.YuanbaoSearchClient.SearchHit> hits =
+                    yuanbaoSearchClient.search(query);
+            log.info("WebSearchTool[元宝链路]: query={}, results={}", query, hits.size());
+            if (hits.isEmpty()) {
+                return "未找到关于「" + query + "」的相关网页结果。";
+            }
+            StringBuilder builder = new StringBuilder();
+            for (int index = 0; index < hits.size(); index++) {
+                var hit = hits.get(index);
+                builder.append(index + 1).append(". ").append(hit.title()).append('\n');
+                if (!hit.passage().isBlank()) {
+                    builder.append(hit.passage()).append('\n');
+                }
+                builder.append("来源: ").append(hit.url()).append("\n\n");
+            }
+            return ToolExecutionGuard.wrapUntrusted(builder.toString().trim());
+        } catch (Exception e) {
+            // 元宝链路失败不阻断——降级到必应免费通道
+            log.warn("元宝搜索链路失败，降级必应通道: query={}, reason={}", query, e.getMessage());
+            return null;
         }
     }
 

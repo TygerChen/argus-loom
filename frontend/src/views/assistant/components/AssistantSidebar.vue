@@ -69,56 +69,29 @@ function formatRelative(iso: string | null): string {
 
 <template>
   <aside class="asst-sidebar">
-    <!-- Brand mark -->
-    <div class="asst-sidebar__brand">
-      <div class="asst-sidebar__brand-mark">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-        </svg>
-      </div>
-      <div class="asst-sidebar__brand-text">
-        <span class="asst-sidebar__brand-eyebrow">Argus Research</span>
-        <span class="asst-sidebar__brand-title">Agent Console</span>
-      </div>
-      <button
-        class="asst-sidebar__refresh"
-        type="button"
-        title="刷新列表"
-        :disabled="loading"
-        @click="emit('refresh')"
-      >
-        <svg :class="{ 'is-spinning': loading }" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="23 4 23 10 17 10" />
-          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-        </svg>
-      </button>
-    </div>
-
-    <!-- Info hint -->
-    <div class="asst-sidebar__section">
-      <label class="asst-sidebar__label">
-        <span>会话同步</span>
-        <span class="asst-sidebar__label-dot" />
-      </label>
-      <p class="asst-sidebar__hint">
-        所有会话已持久化至云端，支持跨设备继续对话。
-      </p>
-    </div>
-
-    <!-- New session -->
+    <!-- 开启新对话 -->
     <button class="asst-sidebar__new-chat" type="button" @click="emit('new-session')">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="12" y1="5" x2="12" y2="19" />
-        <line x1="5" y1="12" x2="19" y2="12" />
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <line x1="12" y1="8" x2="12" y2="16" />
+        <line x1="8" y1="12" x2="16" y2="12" />
       </svg>
-      <span>新建会话</span>
+      <span>开启新对话</span>
     </button>
 
     <!-- History -->
     <div class="asst-sidebar__history">
       <div class="asst-sidebar__history-head">
         <span class="asst-sidebar__history-label">会话历史</span>
-        <span class="asst-sidebar__history-count">{{ sessions.length }}</span>
+        <div class="asst-sidebar__history-tools">
+          <button class="asst-sidebar__refresh" type="button" title="刷新列表" :disabled="loading" @click="emit('refresh')">
+            <svg :class="{ 'is-spinning': loading }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+            </svg>
+          </button>
+          <span class="asst-sidebar__history-count">{{ sessions.length }}</span>
+        </div>
       </div>
 
       <ul v-if="sessions.length > 0" class="asst-sidebar__list">
@@ -188,7 +161,7 @@ function formatRelative(iso: string | null): string {
 
       <div v-else class="asst-sidebar__empty">
         <p>暂无会话</p>
-        <small>点击上方"新建会话"开启一次对话</small>
+        <small>点击上方「开启新对话」开始一次对话</small>
       </div>
     </div>
 
@@ -208,7 +181,7 @@ function formatRelative(iso: string | null): string {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: #fbfaf6;
+  background: var(--surface-white);
   border-right: 1px solid var(--border-default);
   padding: 22px 18px 16px;
   height: 100%;
@@ -346,7 +319,7 @@ function formatRelative(iso: string | null): string {
   font-size: 0.74rem;
   color: var(--text-secondary);
   line-height: 1.55;
-  background: #fff;
+  background: var(--surface-white);
   border: 1px solid var(--border-default);
   border-radius: 10px;
 }
@@ -356,29 +329,29 @@ function formatRelative(iso: string | null): string {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 8px;
   width: 100%;
-  padding: 10px 14px;
+  padding: 11px 14px;
   margin-bottom: 18px;
   font-family: inherit;
   font-size: 0.88rem;
-  font-weight: 600;
-  color: #fff;
-  background: linear-gradient(135deg, #1e293b, #0f172a);
-  border: none;
-  border-radius: 10px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.15);
   transition: all 0.2s ease;
 }
 
 .asst-sidebar__new-chat:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.25);
+  background: color-mix(in srgb, var(--brand-primary) 5%, transparent);
+  border-color: var(--brand-primary);
+  color: var(--brand-primary);
 }
 
 .asst-sidebar__new-chat:active {
-  transform: translateY(0);
+  transform: scale(0.98);
 }
 
 /* History */
@@ -404,6 +377,12 @@ function formatRelative(iso: string | null): string {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-muted);
+}
+
+.asst-sidebar__history-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .asst-sidebar__history-count {
@@ -456,7 +435,7 @@ function formatRelative(iso: string | null): string {
 }
 
 .asst-sidebar__item.is-active {
-  background: #fff;
+  background: var(--surface-white);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
@@ -510,7 +489,7 @@ function formatRelative(iso: string | null): string {
   font-size: 0.84rem;
   font-weight: 600;
   color: var(--text-primary);
-  background: #fff;
+  background: var(--surface-white);
   border: 1.5px solid var(--brand-primary);
   border-radius: 5px;
   outline: none;
@@ -560,7 +539,7 @@ function formatRelative(iso: string | null): string {
   text-align: center;
   border: 1px dashed var(--border-default);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.5);
+  background: color-mix(in srgb, var(--surface-white) 50%, transparent);
 }
 
 .asst-sidebar__empty p {

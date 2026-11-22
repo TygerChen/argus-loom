@@ -46,7 +46,7 @@ const placeholder = computed(() => {
   if (kbBlocked.value) return '请先选择要检索的知识库群组'
   if (props.streaming) return '正在接收回答…（按 Esc 中断）'
   return props.mode === 'CHAT'
-    ? '和 Argus 聊点什么？按 Enter 发送 / Shift + Enter 换行'
+    ? '和 Argus 聊点什么？'
     : props.routeStrategy === 'AUTO'
       ? '在知识库中提问，将自动路由到最相关的知识库'
       : '在选定的知识库中提问，答案会附带证据引用'
@@ -142,7 +142,7 @@ defineExpose({ focus, setText })
           <!-- Status indicator -->
           <div v-if="streaming" class="acx__status">
             <span class="acx__status-dot" />
-            <span>streaming</span>
+            <span>生成中</span>
           </div>
         </div>
 
@@ -222,7 +222,7 @@ defineExpose({ focus, setText })
 .acx {
   flex-shrink: 0;
   padding: 18px 24px 22px;
-  background: linear-gradient(to top, #fff 70%, rgba(255, 255, 255, 0));
+  background: linear-gradient(to top, var(--surface-white) 70%, color-mix(in srgb, var(--surface-white) 0%, transparent));
   position: relative;
   z-index: 4;
 }
@@ -234,7 +234,7 @@ defineExpose({ focus, setText })
 
 /* Shell */
 .acx__shell {
-  background: #fff;
+  background: var(--surface-white);
   border: 1.5px solid var(--border-default);
   border-radius: 16px;
   padding: 12px 14px 10px;
@@ -388,7 +388,7 @@ defineExpose({ focus, setText })
   font-size: 0.74rem;
   font-weight: 500;
   color: var(--text-secondary);
-  background: #fff;
+  background: var(--surface-white);
   border: 1px solid var(--border-default);
   border-radius: 100px;
   cursor: pointer;
@@ -418,7 +418,7 @@ defineExpose({ focus, setText })
 }
 
 .acx__kb-select option {
-  background: #fff;
+  background: var(--surface-white);
   color: var(--text-primary);
 }
 
@@ -560,7 +560,7 @@ defineExpose({ focus, setText })
 
 .acx__btn--abort {
   color: #dc2626;
-  background: #fff;
+  background: var(--surface-white);
   border: 1px solid rgba(239, 68, 68, 0.35);
 }
 

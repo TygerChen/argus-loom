@@ -2,6 +2,7 @@ package com.argus.rag.excel.controller;
 
 import com.argus.rag.common.api.ApiResponse;
 import com.argus.rag.excel.service.ExcelAssetService;
+import com.argus.rag.excel.service.ExcelPermissionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
@@ -31,9 +32,11 @@ public class ExcelAssetController {
 
     private static final Logger log = LoggerFactory.getLogger(ExcelAssetController.class);
     private final ExcelAssetService assetService;
+    private final ExcelPermissionService permissionService;
 
-    public ExcelAssetController(ExcelAssetService assetService) {
+    public ExcelAssetController(ExcelAssetService assetService, ExcelPermissionService permissionService) {
         this.assetService = assetService;
+        this.permissionService = permissionService;
     }
 
     @PostMapping
@@ -62,6 +65,11 @@ public class ExcelAssetController {
         try {
             if (assetKey != null && assetKey.startsWith("/")) {
                 assetKey = assetKey.substring(1);
+            }
+            // 越权读取防护：非 shared 资产（如财务/薪酬截图）要求对所属文档有查看权限
+            Long documentId = assetService.resolveDocumentId(assetKey);
+            if (documentId != null) {
+                permissionService.requireView(documentId);
             }
             if (!assetService.verifySignature(assetKey, sig)) {
                 return ResponseEntity.status(403).build();

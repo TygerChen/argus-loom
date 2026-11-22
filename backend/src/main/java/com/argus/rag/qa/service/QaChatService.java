@@ -16,6 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.argus.rag.settings.UserChatModelService;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.ai.chat.metadata.Usage;
@@ -74,6 +75,9 @@ public class QaChatService {
         private final EvidenceOverviewAssembler evidenceOverviewAssembler;
         private final ObjectMapper objectMapper;
         private final LlmDialogueMetrics dialogueMetrics;
+        private final UserChatModelService userChatModelService;
+        /** ③ 检索后反思（CRAG）：弱证据时做语义相关性反思，过滤跑题/二次检索/拒答。 */
+        private final com.argus.rag.qa.rag.RetrievalRelevanceReflector retrievalRelevanceReflector;
 
         /**
          * 用量信息。
@@ -119,7 +123,9 @@ public class QaChatService {
                         CitationAssembler citationAssembler,
                         EvidenceOverviewAssembler evidenceOverviewAssembler,
                         ObjectMapper objectMapper,
-                        LlmDialogueMetrics dialogueMetrics) {
+                        LlmDialogueMetrics dialogueMetrics,
+                        UserChatModelService userChatModelService,
+                        com.argus.rag.qa.rag.RetrievalRelevanceReflector retrievalRelevanceReflector) {
                 this.qaChatClient = qaChatClient;
                 this.qaUserPromptTemplate = qaUserPromptTemplate;
                 this.documentRetriever = documentRetriever;
@@ -128,6 +134,16 @@ public class QaChatService {
                 this.evidenceOverviewAssembler = evidenceOverviewAssembler;
                 this.objectMapper = objectMapper;
                 this.dialogueMetrics = dialogueMetrics;
+                this.userChatModelService = userChatModelService;
+                this.retrievalRelevanceReflector = retrievalRelevanceReflector;
+        }
+
+        /**
+         * 按当前登录身份解析生效的 ChatClient：用户/平台级模型配置存在且启用时
+         * 用带同样系统提示词与 RAG 顾问的用户级客户端，否则回落全局 qaChatClient。
+         */
+        private ChatClient effectiveChatClient() {
+                return userChatModelService.chatClientForCurrentUser(qaChatClient);
         }
 
         /**
@@ -153,9 +169,20 @@ public class QaChatService {
         }
 
         /**
-         * 执行知识问答流程，返回带用量信息的结果。
+         * 执行知识问答流程，返回带用量信息的结果（单轮模式，无记忆上下文）。
          */
         public AskResult askWithUsage(Long groupId, String question) {
+                return askWithUsage(groupId, question, null);
+        }
+
+        /**
+         * 执行知识问答流程（多轮模式重载）。
+         *
+         * @param memoryContext 记忆上下文文本（滚动摘要 + 近期原文窗口），
+         *                      仅注入<b>生成层</b>；检索使用 {@code question} 本身
+         *                      （已由改写层补全）。为 {@code null} 时为单轮模式。
+         */
+        public AskResult askWithUsage(Long groupId, String question, String memoryContext) {
                 Timer.Sample dialogue = dialogueMetrics.start();
                 boolean failed = false;
                 try {
@@ -176,7 +203,20 @@ public class QaChatService {
                                         evidenceBundle.evidenceLevel(),
                                         documents);
                 }
-                LlmCallResult result = getStructuredAnswer(groupId, question, evidenceBundle);
+                // ③ 检索后反思（CRAG）：弱证据（WEAK/PARTIAL）时做语义相关性反思——
+                // 过滤跑题证据 / 全无关时二次检索 / 仍无则拒答。SUFFICIENT 直接跳过（零额外成本）。
+                RetrievedEvidenceBundle effectiveBundle = reflectWeakEvidence(groupId, question, evidenceBundle);
+                if (effectiveBundle == null || effectiveBundle.documents().isEmpty()) {
+                        long elapsedMs = (System.nanoTime() - startNano) / 1_000_000;
+                        log.info("检索反思判定证据不足: groupId={}, elapsedMs={}", groupId, elapsedMs);
+                        return new AskResult(
+                                        AskQuestionResponse.unanswered(INSUFFICIENT_CODE, INSUFFICIENT_MESSAGE, List.of()),
+                                        new UsageInfo(0, 0, 0, false, elapsedMs),
+                                        evidenceBundle.evidenceLevel(),
+                                        documents);
+                }
+                documents = effectiveBundle.documents();
+                LlmCallResult result = getStructuredAnswer(groupId, question, effectiveBundle, memoryContext);
                 long latencyMs = System.currentTimeMillis() - startMs;
                 if (result.output() == null) {
                         log.warn("问答结构化输出失败: groupId={}, evidenceCount={}", groupId, documents.size());
@@ -221,6 +261,57 @@ public class QaChatService {
         }
 
         /**
+         * ③ 检索后反思（CRAG）：弱证据（WEAK/PARTIAL）时做语义相关性反思。
+         *
+         * <p>动作由代码执行（模型只给相关性标签 + 改写词）：</p>
+         * <ul>
+         *   <li>有相关证据 → 过滤跑题证据，返回重新评估的证据束；</li>
+         *   <li>全无关但有改写词 → 二次检索，返回二次结果；</li>
+         *   <li>全无关且无改写词 → 返回 null（调用方拒答）。</li>
+         * </ul>
+         *
+         * @return 反思后的有效证据束；null 表示反思判定证据不足应拒答
+         */
+        private RetrievedEvidenceBundle reflectWeakEvidence(Long groupId, String question,
+                                                            RetrievedEvidenceBundle original) {
+                EvidenceLevel level = original.evidenceLevel();
+                if (level != EvidenceLevel.WEAK && level != EvidenceLevel.PARTIAL) {
+                        return original; // SUFFICIENT 零成本跳过；NONE/INSUFFICIENT 已在上游拒答
+                }
+                com.argus.rag.qa.rag.RetrievalRelevanceReflector.ReflectionResult reflection =
+                                retrievalRelevanceReflector.reflect(effectiveChatClient(), question, original.documents());
+                if (!reflection.allIrrelevant()) {
+                        List<Document> filtered = original.documents().stream()
+                                        .filter(d -> reflection.keepIds().contains(d.getId()))
+                                        .toList();
+                        if (filtered.isEmpty()) {
+                                return null;
+                        }
+                        log.info("检索反思过滤跑题证据: groupId={}, before={}, after={}",
+                                        groupId, original.documents().size(), filtered.size());
+                        return withDocuments(filtered);
+                }
+                if (reflection.hasRewrite()) {
+                        log.info("检索反思触发二次检索: groupId={}, rewriteQuery={}", groupId, reflection.rewriteQuery());
+                        RetrievedEvidenceBundle reBundle = documentRetriever.retrieveEvidence(
+                                        groupId, reflection.rewriteQuery());
+                        if (reBundle.documents().isEmpty()) {
+                                return null;
+                        }
+                        return reBundle;
+                }
+                log.info("检索反思判定全无关且无可改写检索词: groupId={}", groupId);
+                return null;
+        }
+
+        /** 按证据列表重新评估证据等级并组装证据束（反思过滤后重建）。 */
+        private RetrievedEvidenceBundle withDocuments(List<Document> documents) {
+                EvidenceLevel level = com.argus.rag.qa.rag.EvidenceAssessor.evaluate(documents);
+                return new RetrievedEvidenceBundle(documents, level,
+                                com.argus.rag.qa.rag.EvidenceAssessor.guidanceFor(level));
+        }
+
+        /**
          * 调用大模型获取结构化回答。
          * <p>
          * 先通过 {@code chatResponse()} 获取完整响应以提取 usage，
@@ -230,11 +321,12 @@ public class QaChatService {
         private LlmCallResult getStructuredAnswer(
                         Long groupId,
                         String question,
-                        RetrievedEvidenceBundle evidenceBundle) {
-                Prompt userPrompt = createUserPrompt(question, evidenceBundle);
+                        RetrievedEvidenceBundle evidenceBundle,
+                        String memoryContext) {
+                Prompt userPrompt = createUserPrompt(question, evidenceBundle, memoryContext);
                 ChatResponse chatResponse;
                 try {
-                        chatResponse = qaChatClient.prompt(userPrompt)
+                        chatResponse = effectiveChatClient().prompt(userPrompt)
                                         .advisors(advisor -> advisor
                                                         .param("groupId", groupId)
                                                         .param(
@@ -322,14 +414,22 @@ log.error("QA fallback parse failed. evidenceCount={}",
                                     List<Document> documents,
                                     EvidenceLevel evidenceLevel,
                                     // 流结束后由 QaService 回填的持久化记录 ID。
-                                    java.util.concurrent.atomic.AtomicReference<Long> recordIdRef) {
+                                    java.util.concurrent.atomic.AtomicReference<Long> recordIdRef,
+                                    // 多轮会话 ID（V12）：由 QaService 解析并回填，随 record 事件下发前端。
+                                    java.util.concurrent.atomic.AtomicReference<Long> conversationIdRef) {
                 public StreamContext(Flux<String> tokenStream, List<Document> documents) {
-                        this(tokenStream, documents, null, new java.util.concurrent.atomic.AtomicReference<>());
+                        this(tokenStream, documents, null, new java.util.concurrent.atomic.AtomicReference<>(),
+                                        new java.util.concurrent.atomic.AtomicReference<>());
                 }
 
                 /** 获取流完成后持久化生成的 QA 记录 ID。 */
                 public Long recordId() {
                         return recordIdRef == null ? null : recordIdRef.get();
+                }
+
+                /** 获取本轮归属的多轮会话 ID（V12）。 */
+                public Long conversationId() {
+                        return conversationIdRef == null ? null : conversationIdRef.get();
                 }
         }
 
@@ -363,6 +463,14 @@ log.error("QA fallback parse failed. evidenceCount={}",
          * @return 流式问答上下文，包含 token 流和检索文档
          */
         public StreamContext askStream(Long groupId, String question, Consumer<UsageInfo> onUsageReady) {
+                return askStream(groupId, question, null, onUsageReady);
+        }
+
+        /**
+         * 流式问答（多轮重载）：memoryContext 仅注入生成层，检索层使用改写后的问题不变。
+         */
+        public StreamContext askStream(Long groupId, String question, String memoryContext,
+                        Consumer<UsageInfo> onUsageReady) {
                 // 对话级埋点：流式计时在流 terminal 信号上结束，超时/错误也落入 doOnError。
                 Timer.Sample dialogue = dialogueMetrics.start();
                 Timer successTimer = dialogueMetrics.timer("qa", "stream", true);
@@ -387,24 +495,38 @@ log.error("QA fallback parse failed. evidenceCount={}",
                                         Flux.error(new BusinessException(INSUFFICIENT_CODE, INSUFFICIENT_MESSAGE)),
                                         List.of(),
                                         evidenceBundle.evidenceLevel(),
-                                        new java.util.concurrent.atomic.AtomicReference<>());
+                                        new java.util.concurrent.atomic.AtomicReference<>(), new java.util.concurrent.atomic.AtomicReference<>());
                 }
 
-                Prompt userPrompt = createUserPrompt(question, evidenceBundle);
+                // ③ 检索后反思（与同步路径一致）：弱证据语义相关性反思，过滤跑题/二次检索/拒答
+                RetrievedEvidenceBundle effectiveBundle = reflectWeakEvidence(groupId, question, evidenceBundle);
+                if (effectiveBundle == null || effectiveBundle.documents().isEmpty()) {
+                        log.info("流式问答检索反思判定证据不足: groupId={}", groupId);
+                        dialogueMetrics.finish(dialogue, errorTimer);
+                        recorded[0] = true;
+                        return new StreamContext(
+                                        Flux.error(new BusinessException(INSUFFICIENT_CODE, INSUFFICIENT_MESSAGE)),
+                                        List.of(),
+                                        evidenceBundle.evidenceLevel(),
+                                        new java.util.concurrent.atomic.AtomicReference<>(), new java.util.concurrent.atomic.AtomicReference<>());
+                }
+                documents = effectiveBundle.documents();
+
+                Prompt userPrompt = createUserPrompt(question, effectiveBundle, memoryContext);
 
                 AtomicReference<UsageInfo> usageRef = new AtomicReference<>();
                 AtomicInteger charCount = new AtomicInteger(0);
 
                 // 流式场景使用纯文本 System Prompt，覆盖默认的 JSON 输出要求
                 // 使用 chatResponse() 获取 Flux<ChatResponse> 以便提取 usage
-                Flux<String> tokenFlux = qaChatClient.prompt()
+                Flux<String> tokenFlux = effectiveChatClient().prompt()
                                 .system("你是群组知识问答助手，只能依据给定证据回答，不得补充外部知识或猜测。请直接输出纯文本回答正文，使用简体中文。不要输出 JSON、Markdown 等任何格式标记。")
                                 .user(userPrompt.getContents())
                                 .advisors(advisor -> advisor
                                                 .param("groupId", groupId)
                                                 .param(
                                                                 ReadyChunkDocumentRetriever.PREFETCHED_DOCUMENTS_CONTEXT_KEY,
-                                                                evidenceBundle.documents()))
+                                                                effectiveBundle.documents()))
                                 .stream()
                                 .chatResponse()
                                 .map(response -> {
@@ -460,7 +582,7 @@ log.error("QA fallback parse failed. evidenceCount={}",
 
                 return new StreamContext(streamFlux,
                                 documents, evidenceBundle.evidenceLevel(),
-                                new java.util.concurrent.atomic.AtomicReference<>());
+                                new java.util.concurrent.atomic.AtomicReference<>(), new java.util.concurrent.atomic.AtomicReference<>());
         }
 
         /**
@@ -479,11 +601,23 @@ log.error("QA fallback parse failed. evidenceCount={}",
          * </p>
          */
         private Prompt createUserPrompt(String question, RetrievedEvidenceBundle evidenceBundle) {
+                return createUserPrompt(question, evidenceBundle, null);
+        }
+
+        /**
+         * 构造用户提示词（多轮重载）。
+         * <p>记忆上下文（滚动摘要 + 近期原文）作为"对话背景"块拼在问题之后，
+         * 只影响<b>生成层</b>的连贯性；检索层使用改写后的问题，互不污染。</p>
+         */
+        private Prompt createUserPrompt(String question, RetrievedEvidenceBundle evidenceBundle, String memoryContext) {
                 EvidenceLevel evidenceLevel = evidenceBundle.evidenceLevel() == null
                                 ? EvidenceLevel.NONE
                                 : evidenceBundle.evidenceLevel();
+                String questionWithMemory = (memoryContext == null || memoryContext.isBlank())
+                                ? question
+                                : question + System.lineSeparator() + System.lineSeparator() + memoryContext;
                 return qaUserPromptTemplate.create(Map.of(
-                                "question", question,
+                                "question", questionWithMemory,
                                 "evidenceLevel", evidenceLevel.name(),
                                 "evidenceGuidance", evidenceBundle.evidenceGuidance()));
         }

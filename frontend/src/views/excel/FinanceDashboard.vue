@@ -13,7 +13,7 @@
             导入财务工作簿
           </el-button>
           <el-button :icon="FolderOpened" @click="goDashboard">Excel 工作台</el-button>
-          <input ref="fileInput" class="file-input" type="file" accept=".xlsx,.xls" @change="handleFileChange" />
+          <input ref="fileInput" class="file-input" type="file" accept=".xlsx,.xls" multiple @change="handleFileChange" />
         </div>
       </header>
 
@@ -436,20 +436,36 @@ function selectFile() {
 
 async function handleFileChange(event: Event) {
   const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
+  // 支持批量：顺序逐个导入，最后统一汇总（同批次文件哈希幂等，重复文件会被后端拒绝并计入失败明细）
+  const files = Array.from(input.files ?? [])
   input.value = ''
-  if (!file) return
+  if (files.length === 0) return
   importing.value = true
+  const failed: string[] = []
+  let totalRows = 0
   try {
-    const result = await importFinanceFile(file, {
-      bookKey: '',
-      regionName: '',
-      currencyCode: 'CNY',
-    })
-    ElMessage.success(`财务导入完成，写入 ${result.mappedRows ?? 0} 行流水`)
+    for (const file of files) {
+      try {
+        const result = await importFinanceFile(file, {
+          bookKey: '',
+          regionName: '',
+          currencyCode: 'CNY',
+        })
+        totalRows += result.mappedRows ?? 0
+      } catch (error: any) {
+        failed.push(`${file.name}：${error.message || '导入失败'}`)
+      }
+    }
+    if (failed.length === 0) {
+      ElMessage.success(`财务导入完成：${files.length} 个文件，共写入 ${totalRows} 行流水`)
+    } else {
+      ElMessage({
+        type: 'warning',
+        message: `${files.length - failed.length}/${files.length} 个导入成功（共 ${totalRows} 行）；失败：${failed.join('；')}`,
+        duration: 6000,
+      })
+    }
     resetFilters()
-  } catch (error: any) {
-    ElMessage.error(`财务导入失败：${error.message}`)
   } finally {
     importing.value = false
   }

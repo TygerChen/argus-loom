@@ -78,6 +78,12 @@ public class QaService {
     private final LlmUsageCollector llmUsageCollector;
     private final LlmCostCalculator llmCostCalculator;
     private final QaRecordPersistenceService qaRecordPersistenceService;
+    /** 多轮会话记忆服务（V12）：会话解析/近期原文窗口/滚动摘要。 */
+    private final QaConversationMemoryService qaConversationMemoryService;
+    /** 多轮检索改写器：把追问改写为独立完整的检索问题。 */
+    private final QaConversationQueryRewriter qaConversationQueryRewriter;
+    /** 第十步（收尾与留痕）：任务轨迹落库（异步 fail-soft；QA 无循环态，轮次恒 0）。 */
+    private final com.argus.rag.assistant.trace.TaskTraceRecorder taskTraceRecorder;
 
     /**
      * 构造函数。
@@ -94,13 +100,19 @@ public class QaService {
             CurrentUserService currentUserService,
             LlmUsageCollector llmUsageCollector,
             LlmCostCalculator llmCostCalculator,
-            QaRecordPersistenceService qaRecordPersistenceService) {
+            QaRecordPersistenceService qaRecordPersistenceService,
+            QaConversationMemoryService qaConversationMemoryService,
+            QaConversationQueryRewriter qaConversationQueryRewriter,
+            com.argus.rag.assistant.trace.TaskTraceRecorder taskTraceRecorder) {
         this.groupMembershipService = groupMembershipService;
         this.qaChatService = qaChatService;
         this.currentUserService = currentUserService;
         this.llmUsageCollector = llmUsageCollector;
         this.llmCostCalculator = llmCostCalculator;
         this.qaRecordPersistenceService = qaRecordPersistenceService;
+        this.qaConversationMemoryService = qaConversationMemoryService;
+        this.qaConversationQueryRewriter = qaConversationQueryRewriter;
+        this.taskTraceRecorder = taskTraceRecorder;
     }
 
     /**
@@ -116,27 +128,51 @@ public class QaService {
      * @return 问答响应
      */
     public AskQuestionResponse ask(HttpServletRequest request, AskQuestionRequest askQuestionRequest) {
+        long startTime = System.currentTimeMillis();
         Long groupId = askQuestionRequest.getGroupId();
         groupMembershipService.requireGroupReadable(groupId);
         Long userId = currentUserService.getRequiredCurrentUser().userId();
 
-        QaChatService.AskResult result = qaChatService.askWithUsage(groupId, askQuestionRequest.getQuestion());
+        // 多轮记忆装配（fail-soft）：会话解析 → 记忆上下文 → 检索改写。
+        // 任何异常退化为单轮模式，不影响问答主链路。
+        String originalQuestion = askQuestionRequest.getQuestion();
+        Long conversationId = null;
+        String searchQuestion = originalQuestion;
+        String memoryContext = null;
+        try {
+            conversationId = qaConversationMemoryService.resolveConversation(
+                    userId, groupId, askQuestionRequest.getConversationId(), originalQuestion);
+            String summary = qaConversationMemoryService.summaryOf(conversationId);
+            String recentTurns = qaConversationMemoryService.recentTurnsText(conversationId);
+            memoryContext = qaConversationMemoryService.composeMemoryContext(summary, recentTurns);
+            searchQuestion = qaConversationQueryRewriter.rewrite(originalQuestion, summary, recentTurns);
+        } catch (Exception memoryFailure) {
+            log.warn("多轮记忆装配失败，退化为单轮模式: userId={}, groupId={}", userId, groupId, memoryFailure);
+            conversationId = null;
+            searchQuestion = originalQuestion;
+            memoryContext = null;
+        }
+
+        QaChatService.AskResult result = qaChatService.askWithUsage(groupId, searchQuestion, memoryContext);
 
         Long recordId = saveQaRecord(
                 userId,
                 groupId,
-                askQuestionRequest.getQuestion(),
+                originalQuestion,
                 LlmEndpoint.QA_ASK,
                 result.response(),
                 result.evidenceLevel(),
                 result.usage(),
                 result.documents(),
                 true,
-                null
+                null,
+                conversationId
         );
         recordUsage(userId, groupId, LlmEndpoint.QA_ASK, result.usage(), true, null);
+        qaConversationMemoryService.onTurnCompleted(conversationId, recordId);
+        recordTaskTrace(userId, askQuestionRequest, result, startTime, conversationId);
 
-        return result.response().withRecordId(recordId);
+        return result.response().withRecordId(recordId).withConversationId(conversationId);
     }
 
     /** 统一保存同步和流式 QA 记录，隐藏持久化服务的命令对象组装细节。 */
@@ -146,7 +182,8 @@ public class QaService {
                               QaChatService.UsageInfo usage,
                               List<Document> documents,
                               boolean success,
-                              String errorMessage) {
+                              String errorMessage,
+                              Long conversationId) {
         return qaRecordPersistenceService.saveCompleted(new QaRecordPersistenceService.SaveCommand(
                 userId,
                 groupId,
@@ -158,7 +195,8 @@ public class QaService {
                 usage,
                 documents == null ? List.of() : documents,
                 success,
-                errorMessage
+                errorMessage,
+                conversationId
         ));
     }
 
@@ -186,7 +224,30 @@ public class QaService {
 
         AtomicReference<QaChatService.UsageInfo> usageRef = new AtomicReference<>(
                 new QaChatService.UsageInfo(0, 0, 0, false, 0L));
-        QaChatService.StreamContext rawContext = qaChatService.askStream(groupId, askQuestionRequest.getQuestion(), usage -> {
+
+        // 多轮记忆装配（fail-soft，与同步路径一致）
+        String originalQuestion = askQuestionRequest.getQuestion();
+        Long conversationId = null;
+        String searchQuestion = originalQuestion;
+        String memoryContext = null;
+        try {
+            conversationId = qaConversationMemoryService.resolveConversation(
+                    userId, groupId, askQuestionRequest.getConversationId(), originalQuestion);
+            String summary = qaConversationMemoryService.summaryOf(conversationId);
+            String recentTurns = qaConversationMemoryService.recentTurnsText(conversationId);
+            memoryContext = qaConversationMemoryService.composeMemoryContext(summary, recentTurns);
+            searchQuestion = qaConversationQueryRewriter.rewrite(originalQuestion, summary, recentTurns);
+        } catch (Exception memoryFailure) {
+            log.warn("多轮记忆装配失败（流式），退化为单轮模式: userId={}, groupId={}", userId, groupId, memoryFailure);
+            conversationId = null;
+            searchQuestion = originalQuestion;
+            memoryContext = null;
+        }
+        // lambda 捕获要求事实终值：装配完成后固化引用（catch 分支已归零）
+        final Long conversationIdFinal = conversationId;
+        final String memoryContextFinal = memoryContext;
+
+        QaChatService.StreamContext rawContext = qaChatService.askStream(groupId, searchQuestion, memoryContext, usage -> {
             usageRef.set(usage);
             recordUsage(userId, groupId, LlmEndpoint.QA_STREAM_ASK, usage, true, null);
         });
@@ -202,16 +263,18 @@ public class QaService {
                     Long recordId = saveQaRecord(
                             userId,
                             groupId,
-                            askQuestionRequest.getQuestion(),
+                            originalQuestion,
                             LlmEndpoint.QA_STREAM_ASK,
                             response,
                             rawContext.evidenceLevel(),
                             usageRef.get(),
                             rawContext.documents(),
                             true,
-                            null
+                            null,
+                            conversationIdFinal
                     );
                     recordIdRef.set(recordId);
+                    qaConversationMemoryService.onTurnCompleted(conversationIdFinal, recordId);
                 })
                 .doOnError(error -> {
                     // 无证据属于业务拒答，其它异常记录为系统失败。
@@ -225,27 +288,62 @@ public class QaService {
                     Long recordId = saveQaRecord(
                             userId,
                             groupId,
-                            askQuestionRequest.getQuestion(),
+                            originalQuestion,
                             LlmEndpoint.QA_STREAM_ASK,
                             response,
                             insufficientEvidence ? EvidenceLevel.NONE : rawContext.evidenceLevel(),
                             usageRef.get(),
                             rawContext.documents(),
                             insufficientEvidence,
-                            insufficientEvidence ? null : message
+                            insufficientEvidence ? null : message,
+                            conversationIdFinal
                     );
                     recordIdRef.set(recordId);
+                    qaConversationMemoryService.onTurnCompleted(conversationIdFinal, recordId);
                 });
         // 幂等护栏：token 流是冷流，若上层重试/重连对同一上下文重复订阅，会再次调 LLM、
         // 再次插入 QA 记录、再次计量，造成重复扣费与重复落库。用 cache() 固化一次执行——
         // 首个订阅者完成 LLM + 落库 + usage, 之后的订阅只重放已产出的 token 缓存,
         // 不再重复调用上游副作用, 让「token 级重试」幂等。
         Flux<String> idempotentTokenStream = persistedTokenStream.cache();
+        java.util.concurrent.atomic.AtomicReference<Long> conversationIdRef =
+                new java.util.concurrent.atomic.AtomicReference<>(conversationId);
         return new QaChatService.StreamContext(
                 idempotentTokenStream,
                 rawContext.documents(),
                 rawContext.evidenceLevel(),
-                recordIdRef);
+                recordIdRef,
+                conversationIdRef);
+    }
+
+    /**
+     * 第十步（收尾与留痕）：QA 任务轨迹落库（channel=KB_QA，无循环态轮次恒 0）。
+     * 形态派生：拒答（RETRIEVAL_NOT_GROUNDED/未答）→ REFUSED，否则 DETERMINED。
+     */
+    private void recordTaskTrace(Long userId, AskQuestionRequest askQuestionRequest,
+                                 QaChatService.AskResult result, long startTime, Long conversationId) {
+        try {
+            com.argus.rag.common.security.AuthenticatedUser user =
+                    com.argus.rag.common.security.UserContext.get();
+            boolean answered = result.response() != null && result.response().answered();
+            taskTraceRecorder.record(new com.argus.rag.assistant.trace.TaskTraceRecorder.TaskTraceRecord(
+                    org.slf4j.MDC.get(com.argus.rag.common.logging.TraceIdFilter.MDC_TRACE_ID),
+                    conversationId,
+                    userId,
+                    user != null && user.systemRole() != null ? user.systemRole().name() : null,
+                    com.argus.rag.common.task.TaskChannel.KB_QA,
+                    askQuestionRequest.getQuestion() == null ? 0 : askQuestionRequest.getQuestion().length(),
+                    null,
+                    null,
+                    answered ? com.argus.rag.assistant.model.ResultShape.DETERMINED
+                            : com.argus.rag.assistant.model.ResultShape.REFUSED,
+                    result.response() == null || result.response().answer() == null
+                            ? 0 : result.response().answer().length(),
+                    System.currentTimeMillis() - startTime
+            ));
+        } catch (RuntimeException traceFailure) {
+            log.warn("QA 任务轨迹组装失败(不影响主流程): {}", traceFailure.getMessage());
+        }
     }
 
     private void recordUsage(Long userId, Long groupId, String endpoint,

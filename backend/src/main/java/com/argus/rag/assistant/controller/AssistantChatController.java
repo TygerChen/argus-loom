@@ -63,6 +63,10 @@ public class AssistantChatController {
             @Valid @RequestBody AssistantChatRequest requestBody,
             HttpServletRequest request
     ) {
+        // 入口审计（V13-V15）：补记票据便签（输入长度/身份声明/风险/重复，只记录不裁决）。
+        com.argus.rag.common.task.EntryAuditSupport.inspectUserInput(request, requestBody.message());
+        com.argus.rag.common.task.EntryAuditSupport.recordSessionId(request, requestBody.sessionId());
+        com.argus.rag.common.task.EntryAuditSupport.recordRequestedGroups(request, requestBody.effectiveGroupIds());
         return ApiResponse.success(assistantService.chat(request, requestBody));
     }
 
@@ -81,6 +85,10 @@ public class AssistantChatController {
             @Valid @RequestBody AssistantChatRequest requestBody,
             HttpServletRequest request
     ) {
+        // 入口审计（V13-V15）：流式入口同样补记票据便签。
+        com.argus.rag.common.task.EntryAuditSupport.inspectUserInput(request, requestBody.message());
+        com.argus.rag.common.task.EntryAuditSupport.recordSessionId(request, requestBody.sessionId());
+        com.argus.rag.common.task.EntryAuditSupport.recordRequestedGroups(request, requestBody.effectiveGroupIds());
         // StreamingResponseBody 由容器在独立线程执行，UserContext 需要在此处提前抓取。
         AuthenticatedUser authenticatedUser = UserContext.get();
         StreamingResponseBody responseBody = outputStream -> {

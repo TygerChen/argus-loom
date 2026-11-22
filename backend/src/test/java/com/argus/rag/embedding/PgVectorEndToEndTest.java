@@ -22,7 +22,7 @@ class PgVectorEndToEndTest {
 
     private static final String URL = "jdbc:postgresql://localhost:5432/argus_rag";
     private static final String USER = "postgres";
-    private static final String PASSWORD = "yct412825";
+    private static final String PASSWORD = System.getenv().getOrDefault("POSTGRES_PASSWORD", "");
 
     private static final List<String> DOCS = List.of(
             "员工请假需要提前一天在 OA 系统提交申请",

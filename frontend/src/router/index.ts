@@ -22,7 +22,8 @@ const router = createRouter({
     {
       path: '/app',
       component: () => import('../layouts/DefaultLayout.vue'),
-      redirect: '/app/groups',
+      // 对话优先：进入工作区默认落在 AI 问答页（产品定位是手册问答助手）
+      redirect: '/app/assistant',
       children: [
         {
           path: 'documents',
@@ -52,6 +53,12 @@ const router = createRouter({
           name: 'groups',
           component: () => import('../views/groups/GroupsPage.vue'),
           meta: { title: '协作小组' },
+        },
+        {
+          path: 'reports/task-daily',
+          name: 'task-daily',
+          component: () => import('../views/reports/TaskDailyView.vue'),
+          meta: { title: '任务日报' },
         },
         {
           path: 'admin',
@@ -94,6 +101,12 @@ const router = createRouter({
           name: 'finance-workbench',
           component: () => import('../views/excel/FinanceWorkbenchView.vue'),
           meta: { title: '财务工作台', requireFinance: true },
+        },
+        {
+          path: 'finance/fund-daily',
+          name: 'finance-fund-daily',
+          component: () => import('../views/excel/FundDailyView.vue'),
+          meta: { title: '资金日报', requireFinance: true },
         },
         {
           path: 'finance/my-payroll',

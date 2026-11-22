@@ -29,6 +29,14 @@ const loadingOverview = ref(false)
 const loadingRank = ref(false)
 const errorMsg = ref('')
 
+/** 全零判定：平台还没产生任何 LLM 调用时，给一条"数据从哪来"的引导 */
+const isBrandNewPlatform = computed(
+  () =>
+    overview.value != null &&
+    (overview.value.todayRequests ?? 0) === 0 &&
+    (overview.value.todayTokens ?? 0) === 0,
+)
+
 // ── 格式化工具 ──
 function formatNumber(n: number): string {
   return n.toLocaleString('zh-CN')
@@ -184,6 +192,24 @@ onMounted(() => {
     <div class="page-header">
       <h1>使用统计</h1>
       <p>LLM 调用量、Token 消耗与费用分析</p>
+    </div>
+
+    <!-- 平台全新时的引导：数据从哪来 -->
+    <div v-if="isBrandNewPlatform && !loadingOverview" class="onboarding-banner">
+      <div class="onboarding-banner__icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 8v4M12 16h.01" />
+        </svg>
+      </div>
+      <div class="onboarding-banner__body">
+        <strong>这里还没有数据</strong>
+        <p>
+          平台尚未产生任何 LLM 调用。去「AI 助手」提问，或在知识库中上传文档后发起问答——
+          每一次调用的 Token 消耗与费用都会自动记录在这里。
+        </p>
+      </div>
+      <router-link to="/app/assistant" class="onboarding-banner__action">去提问 →</router-link>
     </div>
 
     <!-- 错误提示 -->
@@ -441,6 +467,61 @@ onMounted(() => {
 </template>
 
 <style scoped>
+/* ── 全新平台引导条 ── */
+.onboarding-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  margin-bottom: 28px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(74, 144, 217, 0.07), rgba(92, 201, 193, 0.07));
+  border: 1px solid rgba(74, 144, 217, 0.18);
+  animation: fade-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.onboarding-banner__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(74, 144, 217, 0.12);
+  color: var(--brand-primary);
+  flex-shrink: 0;
+}
+.onboarding-banner__body {
+  flex: 1;
+  min-width: 0;
+}
+.onboarding-banner__body strong {
+  display: block;
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.onboarding-banner__body p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+.onboarding-banner__action {
+  flex-shrink: 0;
+  padding: 8px 18px;
+  border-radius: 100px;
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-dark));
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  box-shadow: 0 3px 10px rgba(74, 144, 217, 0.25);
+  transition: all 0.2s ease;
+}
+.onboarding-banner__action:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 16px rgba(74, 144, 217, 0.35);
+}
+
 /* ── 页头 ── */
 .page-header {
   margin-bottom: 32px;
@@ -533,7 +614,7 @@ onMounted(() => {
   margin-bottom: 16px;
 }
 .kpi-card--blue .kpi-card__icon {
-  background: #eff6ff;
+  background: color-mix(in srgb, var(--brand-primary) 8%, var(--surface-white));
   color: #3b82f6;
 }
 .kpi-card--teal .kpi-card__icon {
@@ -541,11 +622,11 @@ onMounted(() => {
   color: #14b8a6;
 }
 .kpi-card--amber .kpi-card__icon {
-  background: #fffbeb;
+  background: color-mix(in srgb, #f59e0b 9%, var(--surface-white));
   color: #f59e0b;
 }
 .kpi-card--green .kpi-card__icon {
-  background: #f0fdf4;
+  background: color-mix(in srgb, #10b981 8%, var(--surface-white));
   color: #22c55e;
 }
 
@@ -689,7 +770,7 @@ onMounted(() => {
   display: flex;
   gap: 4px;
   margin-bottom: 20px;
-  background: #f1f5f9;
+  background: var(--surface-muted);
   border-radius: 10px;
   padding: 4px;
   width: fit-content;
@@ -710,7 +791,7 @@ onMounted(() => {
   color: var(--text-primary);
 }
 .period-tab.active {
-  background: #fff;
+  background: var(--surface-white);
   color: #3b82f6;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
@@ -748,7 +829,7 @@ onMounted(() => {
   transition: background 0.15s;
 }
 .rank-table tbody tr:hover {
-  background: #f8fafc;
+  background: var(--surface-subtle);
 }
 .rank-table tbody tr:last-child td {
   border-bottom: none;
@@ -787,7 +868,7 @@ onMounted(() => {
   font-size: 12px;
   font-weight: 700;
   color: var(--text-muted);
-  background: #f1f5f9;
+  background: var(--surface-muted);
 }
 .rank-badge--gold {
   background: linear-gradient(135deg, #fbbf24, #f59e0b);

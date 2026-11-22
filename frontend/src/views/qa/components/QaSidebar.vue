@@ -154,7 +154,7 @@ function formatRelative(ts: number): string {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: #fbfaf6;
+  background: var(--surface-white);
   border-right: 1px solid var(--border-default);
   padding: 22px 18px 16px;
   height: 100%;
@@ -270,7 +270,7 @@ function formatRelative(ts: number): string {
   font-family: inherit;
   font-size: 0.85rem;
   color: var(--text-primary);
-  background: #fff;
+  background: var(--surface-white);
   border: 1px solid var(--border-default);
   border-radius: 10px;
   outline: none;
@@ -419,7 +419,7 @@ function formatRelative(ts: number): string {
 }
 
 .qa-sidebar__item.is-active {
-  background: #fff;
+  background: var(--surface-white);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
@@ -508,7 +508,7 @@ function formatRelative(ts: number): string {
   text-align: center;
   border: 1px dashed var(--border-default);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.5);
+  background: color-mix(in srgb, var(--surface-white) 50%, transparent);
 }
 
 .qa-sidebar__empty p {

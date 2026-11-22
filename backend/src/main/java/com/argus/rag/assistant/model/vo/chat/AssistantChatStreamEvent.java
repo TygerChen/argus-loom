@@ -53,7 +53,11 @@ public record AssistantChatStreamEvent(
         /**
          * 错误信息，仅在 error 事件中有值
          */
-        String error
+        String error,
+        /**
+         * 待确认写提案，仅在 done 事件中有值（第十一步确认门；null=无）
+         */
+        PendingProposalVO pendingProposal
 ) {
 
     public static AssistantChatStreamEvent start(
@@ -84,6 +88,7 @@ public record AssistantChatStreamEvent(
                 null,
                 null,
                 List.of(),
+                null,
                 null
         );
     }
@@ -118,6 +123,7 @@ public record AssistantChatStreamEvent(
                 null,
                 null,
                 List.of(),
+                null,
                 null
         );
     }
@@ -143,6 +149,21 @@ public record AssistantChatStreamEvent(
             String reply,
             List<AskQuestionResponse.Citation> citations
     ) {
+        return done(sessionId, toolMode, groupId, groupIds, routeStrategy, messageId, reply, citations, null);
+    }
+
+    /** 完成事件（第十一步：可携带待确认写提案）。 */
+    public static AssistantChatStreamEvent done(
+            Long sessionId,
+            AssistantToolMode toolMode,
+            Long groupId,
+            List<Long> groupIds,
+            KbRouteStrategy routeStrategy,
+            Long messageId,
+            String reply,
+            List<AskQuestionResponse.Citation> citations,
+            PendingProposalVO pendingProposal
+    ) {
         return new AssistantChatStreamEvent(
                 "done",
                 null,
@@ -156,7 +177,8 @@ public record AssistantChatStreamEvent(
                 messageId,
                 reply,
                 citations == null ? List.of() : citations,
-                null
+                null,
+                pendingProposal
         );
     }
 
@@ -190,7 +212,8 @@ public record AssistantChatStreamEvent(
                 null,
                 null,
                 List.of(),
-                error
+                error,
+                null
         );
     }
 
@@ -226,6 +249,7 @@ public record AssistantChatStreamEvent(
                 null,
                 null,
                 List.of(),
+                null,
                 null
         );
     }

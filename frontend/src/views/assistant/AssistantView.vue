@@ -15,6 +15,8 @@ import {
   archiveSession,
   restoreSession,
   streamAssistantMessage,
+  confirmProposal,
+  cancelProposal,
 } from '@/api/assistant'
 import type {
   AssistantChatStreamEvent,
@@ -23,6 +25,7 @@ import type {
   AssistantSessionListItem,
   AssistantToolMode,
   KbRouteStrategy,
+  PendingProposal,
 } from '@/types/assistant'
 import type { DocumentItem } from '@/api/document'
 import DocumentPreviewModal from '@/components/DocumentPreviewModal.vue'
@@ -53,7 +56,10 @@ const activeSession = computed(() =>
 )
 
 // ── Mode + KB ──
-const mode = ref<AssistantToolMode>('CHAT')
+// 对话优先形态下的默认模式：产品定位是手册问答助手，有可用知识库时落地即
+// 知识库检索；新用户还没有群组时自动回退 CHAT——否则输入框会被
+// "请先选择知识库群组"锁死，首体验就卡死。用户可随时手动切换。
+const mode = ref<AssistantToolMode>(appStore.visibleGroups.length > 0 ? 'KB_SEARCH' : 'CHAT')
 const selectedGroupIds = ref<number[]>([])
 const routeStrategy = ref<KbRouteStrategy>('AUTO')
 
@@ -90,6 +96,7 @@ function toUi(m: AssistantMessageItem): UiAssistantMessage {
     createdAt: m.createdAt,
     toolCallMessages: [],
     citations: [],
+    pendingProposal: null,
   }
 }
 
@@ -346,6 +353,7 @@ async function handleAsk(text: string) {
     streaming: true,
     citations: [],
     toolCallMessages: [],
+    pendingProposal: null,
   }
   messages.value.push(assistantMsg)
   // 关键：push 后 Vue 会把元素包一层 Proxy，只有通过 Proxy 改属性才会触发响应式。
@@ -413,6 +421,7 @@ function onStreamEvent(ev: AssistantChatStreamEvent, target: UiAssistantMessage)
         target.localId = `srv-${ev.messageId}`
       }
       target.citations = ev.citations ?? []
+      target.pendingProposal = ev.pendingProposal ?? null
       target.streaming = false
       break
     case 'tool_call':
@@ -426,6 +435,30 @@ function onStreamEvent(ev: AssistantChatStreamEvent, target: UiAssistantMessage)
       target.failed = true
       target.failureMessage = ev.error ?? '生成失败'
       break
+  }
+}
+
+async function handleConfirmProposal(proposal: PendingProposal) {
+  const target = messages.value.find((m) => m.pendingProposal?.proposalId === proposal.proposalId)
+  if (!target) return
+  try {
+    const outcome = await confirmProposal(proposal.proposalId)
+    target.pendingProposal = { ...proposal, status: 'EXECUTED' }
+    ElMessage.success(`已执行：${outcome.summary}`)
+  } catch (err) {
+    transcriptRef.value?.setProposalResult(target.localId, 'FAILED', extractApiError(err, '执行失败'))
+    ElMessage.error(extractApiError(err, '执行失败'))
+  }
+}
+
+async function handleCancelProposal(proposal: PendingProposal) {
+  const target = messages.value.find((m) => m.pendingProposal?.proposalId === proposal.proposalId)
+  if (!target) return
+  try {
+    await cancelProposal(proposal.proposalId)
+    target.pendingProposal = { ...proposal, status: 'CANCELLED' }
+  } catch (err) {
+    ElMessage.error(extractApiError(err, '取消失败'))
   }
 }
 
@@ -463,6 +496,7 @@ async function handleRetry() {
 }
 
 const composerRef = ref<InstanceType<typeof AssistantComposer> | null>(null)
+const transcriptRef = ref<InstanceType<typeof AssistantTranscript> | null>(null)
 
 function handleStarterPick(prompt: string, starterMode: AssistantToolMode) {
   mode.value = starterMode
@@ -555,6 +589,7 @@ onMounted(async () => {
           />
         </div>
         <AssistantTranscript
+          ref="transcriptRef"
           :messages="messages"
           :session-id="activeSessionId"
           :session-title="activeSession?.title ?? ''"
@@ -565,6 +600,8 @@ onMounted(async () => {
           @update:mode="(m) => (mode = m)"
           @inspect-citation="openCitation"
           @retry="handleRetry"
+          @confirm-proposal="handleConfirmProposal"
+          @cancel-proposal="handleCancelProposal"
         />
       </template>
       <template v-else>
@@ -601,7 +638,7 @@ onMounted(async () => {
   display: flex;
   height: 100%;
   min-height: 600px;
-  background: #fff;
+  background: var(--surface-white);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   overflow: hidden;

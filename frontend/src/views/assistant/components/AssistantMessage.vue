@@ -6,10 +6,16 @@
  * 失败也要好好说话，01 篇的产品原则）。
  * 内容同样强制 renderSafeMarkdown 消毒。
  */
-import { computed } from 'vue'
-import type { AssistantCitationItem, AssistantMessageRole, AssistantToolMode } from '@/types/assistant'
+import { computed, ref, watch, nextTick } from 'vue'
+import type {
+  AssistantCitationItem,
+  AssistantMessageRole,
+  AssistantToolMode,
+  PendingProposal,
+} from '@/types/assistant'
 import AssistantCitationBar from './AssistantCitationBar.vue'
 import { renderSafeMarkdown } from '@/utils/safeMarkdown'
+import { enhanceCodeBlocks, normalizeFences } from '@/utils/codeBlock'
 
 export interface UiAssistantMessage {
   localId: string
@@ -26,6 +32,7 @@ export interface UiAssistantMessage {
   failureMessage?: string | null
   citations?: AssistantCitationItem[]
   toolCallMessages: UiToolCallMessage[]
+  pendingProposal?: PendingProposal | null
 }
 
 export interface UiToolCallMessage {
@@ -41,11 +48,50 @@ const props = defineProps<{
 const emit = defineEmits<{
   'inspect-citation': [citation: AssistantCitationItem]
   retry: []
+  'confirm-proposal': [proposal: PendingProposal]
+  'cancel-proposal': [proposal: PendingProposal]
 }>()
+
+// ── 写提案确认卡片（第十一步） ──
+// 提案状态：后端为源头（REGISTERED/EXECUTED/CANCELLED），点击后前端先乐观置状态
+type ProposalUiState = 'IDLE' | 'CONFIRMING' | 'CONFIRMED' | 'CANCELLED' | 'FAILED'
+const proposalUiState = ref<ProposalUiState>('IDLE')
+const proposalError = ref('')
+
+const proposal = computed(() => props.message.pendingProposal ?? null)
+const proposalExpired = computed(() => {
+  if (!proposal.value) return false
+  return Date.now() > proposal.value.expiresAt
+})
+const proposalActionable = computed(
+  () => proposal.value && proposal.value.status === 'REGISTERED' && !proposalExpired.value && proposalUiState.value === 'IDLE',
+)
+
+function onConfirmProposal() {
+  if (!proposal.value || !proposalActionable.value) return
+  proposalUiState.value = 'CONFIRMING'
+  proposalError.value = ''
+  emit('confirm-proposal', proposal.value)
+}
+
+function onCancelProposal() {
+  if (!proposal.value || !proposalActionable.value) return
+  proposalUiState.value = 'CANCELLED'
+  emit('cancel-proposal', proposal.value)
+}
+
+/** 由父组件回写结果（成功/失败），驱动卡片终态展示。 */
+function setProposalResult(state: ProposalUiState, error?: string) {
+  proposalUiState.value = state
+  if (error) proposalError.value = error
+}
+
+defineExpose({ setProposalResult })
 
 const rendered = computed(() => {
   if (props.message.role === 'USER' || props.message.role === 'TOOL') return ''
-  return renderSafeMarkdown(props.message.content || '')
+  // 先规整围栏再消毒渲染：LLM 输出的 ``` 常不处于行首（见 normalizeFences）
+  return renderSafeMarkdown(normalizeFences(props.message.content || ''))
 })
 
 const toolPayload = computed(() => {
@@ -64,6 +110,32 @@ function formatTime(iso: string): string {
 
 function pad(n: number): string {
   return String(n).padStart(2, '0')
+}
+
+// ── 代码块增强：语言标签 + 复制按钮（流式渲染下反复调用安全，见 codeBlock.ts） ──
+const mdRef = ref<HTMLElement | null>(null)
+const copiedAll = ref(false)
+
+watch(
+  () => props.message.content,
+  async () => {
+    await nextTick()
+    enhanceCodeBlocks(mdRef.value)
+  },
+  { immediate: true },
+)
+
+async function copyAll() {
+  try {
+    await navigator.clipboard.writeText(props.message.content)
+  } catch {
+    // 剪贴板不可用时静默失败：不打断阅读流
+    return
+  }
+  copiedAll.value = true
+  window.setTimeout(() => {
+    copiedAll.value = false
+  }, 1600)
 }
 </script>
 
@@ -99,6 +171,21 @@ function pad(n: number): string {
           {{ message.toolMode === 'CHAT' ? 'chat' : 'kb_search' }}
         </span>
         <span class="amsg__time">{{ formatTime(message.createdAt) }}</span>
+        <button
+          v-if="message.role === 'ASSISTANT' && message.content && !message.streaming"
+          class="amsg__copy"
+          type="button"
+          :title="copiedAll ? '已复制' : '复制全文'"
+          @click="copyAll"
+        >
+          <svg v-if="!copiedAll" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </svg>
+          <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        </button>
       </header>
 
       <!-- USER -->
@@ -158,7 +245,7 @@ function pad(n: number): string {
         </div>
 
         <div v-else class="amsg__md" :class="{ 'is-streaming': message.streaming }">
-          <div class="amsg__md-content" v-html="rendered" />
+          <div ref="mdRef" class="amsg__md-content" v-html="rendered" />
           <span v-if="message.streaming" class="amsg__cursor" />
         </div>
 
@@ -168,6 +255,34 @@ function pad(n: number): string {
           :groups="groups ?? []"
           @inspect="(c) => emit('inspect-citation', c)"
         />
+
+        <!-- 写提案确认卡片（第十一步确认门） -->
+        <div v-if="!message.streaming && proposal" class="amsg__proposal">
+          <div class="amsg__proposal-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M8 10h8M8 14h5" />
+            </svg>
+          </div>
+          <div class="amsg__proposal-body">
+            <p class="amsg__proposal-summary">{{ proposal.summary }}</p>
+            <p v-if="proposalExpired && proposal.status === 'REGISTERED'" class="amsg__proposal-hint is-warn">
+              提案已过期，请重新发起
+            </p>
+            <p v-else-if="proposalUiState === 'CONFIRMING'" class="amsg__proposal-hint">正在执行…</p>
+            <p v-else-if="proposalUiState === 'CONFIRMED'" class="amsg__proposal-hint is-ok">✅ 已执行</p>
+            <p v-else-if="proposalUiState === 'CANCELLED' || proposal.status === 'CANCELLED'" class="amsg__proposal-hint">已取消</p>
+            <p v-else-if="proposal.status === 'EXECUTED'" class="amsg__proposal-hint is-ok">✅ 已执行</p>
+            <p v-else-if="proposalUiState === 'FAILED'" class="amsg__proposal-hint is-warn">{{ proposalError || '执行失败，请重试' }}</p>
+
+            <div v-if="proposalActionable" class="amsg__proposal-actions">
+              <button class="amsg__proposal-btn amsg__proposal-btn--confirm" type="button" @click="onConfirmProposal">
+                确认执行
+              </button>
+              <button class="amsg__proposal-btn" type="button" @click="onCancelProposal">取消</button>
+            </div>
+          </div>
+        </div>
       </template>
     </div>
   </article>
@@ -214,9 +329,9 @@ function pad(n: number): string {
 }
 
 .amsg--assistant {
-  background: linear-gradient(180deg, rgba(250, 250, 247, 0.6), rgba(250, 250, 247, 0.3));
-  border-top: 1px solid rgba(15, 23, 42, 0.05);
-  border-bottom: 1px solid rgba(15, 23, 42, 0.05);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-subtle) 60%, transparent), color-mix(in srgb, var(--surface-subtle) 30%, transparent));
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .amsg--tool {
@@ -243,7 +358,7 @@ function pad(n: number): string {
 }
 
 .amsg--user .amsg__avatar {
-  background: linear-gradient(135deg, #1e293b, #0f172a);
+  background: linear-gradient(135deg, var(--text-secondary), var(--surface-footer));
   box-shadow: 0 2px 6px rgba(15, 23, 42, 0.2);
 }
 
@@ -305,6 +420,34 @@ function pad(n: number): string {
   margin-left: auto;
 }
 
+/* 复制全文：hover 消息行时浮现，避免常驻噪音 */
+.amsg__copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.amsg:hover .amsg__copy,
+.amsg__copy:focus-visible {
+  opacity: 1;
+}
+
+.amsg__copy:hover {
+  color: var(--brand-primary);
+  background: var(--surface-accent);
+  border-color: rgba(74, 144, 217, 0.2);
+}
+
 /* USER content */
 .amsg__user-text {
   font-size: 0.95rem;
@@ -347,7 +490,7 @@ function pad(n: number): string {
 .amsg__tool-body {
   margin-top: 4px;
   padding: 8px 12px;
-  background: #f5f7fa;
+  background: var(--surface-muted);
   border-radius: 4px;
   overflow-x: auto;
   font-size: 12px;
@@ -365,10 +508,10 @@ function pad(n: number): string {
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  background: #f0f7ff;
+  background: color-mix(in srgb, var(--brand-primary) 8%, transparent);
   border-radius: 6px;
   font-size: 13px;
-  color: #2563eb;
+  color: var(--brand-primary);
 }
 
 /* Thinking */
@@ -377,7 +520,7 @@ function pad(n: number): string {
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
-  background: #fff;
+  background: var(--surface-white);
   border: 1px solid var(--border-default);
   border-radius: 100px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
@@ -442,7 +585,7 @@ function pad(n: number): string {
   font-size: 0.78rem;
   font-weight: 600;
   color: #dc2626;
-  background: #fff;
+  background: var(--surface-white);
   border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: 100px;
   cursor: pointer;
@@ -522,23 +665,21 @@ function pad(n: number): string {
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.84em;
   padding: 1px 6px;
-  background: rgba(15, 23, 42, 0.06);
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
   border-radius: 4px;
   color: var(--brand-primary-dark);
 }
 
 .amsg__md :deep(pre) {
-  margin: 12px 0;
+  margin: 0;
   padding: 14px 16px;
-  background: #0f172a;
-  border-radius: 10px;
+  background: var(--surface-footer);
   overflow-x: auto;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.82rem;
   line-height: 1.6;
   color: #e2e8f0;
-  border: 1px solid #1e293b;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.15);
+  border: none;
 }
 
 .amsg__md :deep(pre code) {
@@ -605,6 +746,79 @@ function pad(n: number): string {
   max-width: 100%;
   border-radius: 8px;
   margin: 12px 0;
+}
+
+/* 写提案确认卡片（第十一步） */
+.amsg__proposal {
+  display: flex;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid rgba(74, 144, 217, 0.25);
+  border-radius: 12px;
+  background: rgba(74, 144, 217, 0.04);
+}
+.amsg__proposal-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--brand-primary);
+  color: #fff;
+}
+.amsg__proposal-body {
+  flex: 1;
+  min-width: 0;
+}
+.amsg__proposal-summary {
+  margin: 0 0 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+.amsg__proposal-hint {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.amsg__proposal-hint.is-ok {
+  color: #16a34a;
+}
+.amsg__proposal-hint.is-warn {
+  color: #dc2626;
+}
+.amsg__proposal-actions {
+  display: flex;
+  gap: 8px;
+}
+.amsg__proposal-btn {
+  padding: 6px 16px;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.amsg__proposal-btn:hover {
+  border-color: var(--brand-primary);
+  color: var(--brand-primary);
+}
+.amsg__proposal-btn--confirm {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: #fff;
+}
+.amsg__proposal-btn--confirm:hover {
+  background: var(--brand-primary-dark);
+  color: #fff;
 }
 
 @media (max-width: 720px) {

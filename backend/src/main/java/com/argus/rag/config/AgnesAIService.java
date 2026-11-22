@@ -36,8 +36,8 @@ public class AgnesAIService {
                     new HttpEntity<>(body, headers), Map.class);
             return ApiResponse.success(result);
         } catch (Exception e) {
-            log.error("Image generation failed: {}", e.getMessage());
-            return new ApiResponse<>(false, null, "Image generation failed: " + e.getMessage());
+            log.error("Image generation failed", e);
+            return new ApiResponse<>(false, null, "图片生成失败，请稍后重试");
         }
     }
 
@@ -52,8 +52,8 @@ public class AgnesAIService {
                     new HttpEntity<>(body, headers), Map.class);
             return ApiResponse.success(result);
         } catch (Exception e) {
-            log.error("Video generation failed: {}", e.getMessage());
-            return new ApiResponse<>(false, null, "Video generation failed: " + e.getMessage());
+            log.error("Video generation failed", e);
+            return new ApiResponse<>(false, null, "视频生成失败，请稍后重试");
         }
     }
 }

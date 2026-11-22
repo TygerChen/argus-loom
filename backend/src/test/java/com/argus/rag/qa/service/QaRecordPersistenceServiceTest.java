@@ -84,6 +84,7 @@ class QaRecordPersistenceServiceTest {
                 new QaChatService.UsageInfo(100, 40, 140, false, 1234L),
                 List.of(evidence),
                 true,
+                null,
                 null
         ));
 

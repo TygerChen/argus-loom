@@ -107,6 +107,32 @@ public class ExcelAssetService {
     }
 
     /**
+     * 解析资产 key 的文档归属：{@code images/{documentId}/...} → documentId；
+     * {@code images/shared/...}、charts 前缀或非 images 前缀 → null（共享/无文档归属，登录即可）。
+     * <p>读取侧据此做文档级越权校验——资产可能是财务/薪酬截图，UUID 不可猜测性之外
+     * 再加一道权限门。</p>
+     */
+    public Long resolveDocumentId(String key) {
+        if (key == null || key.isBlank()) {
+            return null;
+        }
+        String clean = key.startsWith("/") ? key.substring(1) : key;
+        String[] parts = clean.split("/");
+        if (parts.length < 2 || !ASSET_KEY_PREFIX.replace("/", "").equals(parts[0])) {
+            return null;
+        }
+        String owner = parts[1];
+        if ("shared".equals(owner)) {
+            return null;
+        }
+        try {
+            return Long.valueOf(owner);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
      * 上传图片。三道校验 + 一个存储约定：
      * 类型白名单（Content-Type 由文件扩展名和浏览器声明共同决定，防伪造）、
      * 20MB 上限、键名带归属（images/{documentId 或 shared}/{UUID}.{ext}）。

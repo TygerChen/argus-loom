@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { fetchGroups } from '@/api/group'
@@ -45,6 +46,11 @@ const {
 const groupsLoading = ref(false)
 const groupsError = ref('')
 const selectedGroupId = ref<number | null>(appStore.currentGroupId)
+  // 多轮会话（V12）：当前问答会话 ID，5 分钟内同群组提问自动延续；"新话题"按钮重置
+  const qaConversationId = ref<number | null>(null)
+  function startNewTopic() {
+    qaConversationId.value = null
+  }
 
 const selectedGroupName = computed(() => {
   const g = appStore.visibleGroups.find((x) => x.groupId === selectedGroupId.value)
@@ -228,6 +234,10 @@ function ensureSessionForAsk(): string {
 
 async function handleAsk(text: string) {
   if (!text.trim() || selectedGroupId.value === null || asking.value) return
+  if (text.length > 2000) {
+    // 长输入提示：材料模式已启用（后端上限 8000，更长内容建议上传为文档）
+    ElMessage.info('已进入长文本模式：整段内容将作为背景材料随问题一起分析')
+  }
   if (!authStore.accessToken) {
     console.warn('No access token; cannot stream.')
     return
@@ -265,6 +275,7 @@ async function handleAsk(text: string) {
       {
         groupId: selectedGroupId.value,
         question: text,
+        conversationId: qaConversationId.value ?? undefined,
       },
       authStore.accessToken!,
       {
@@ -302,8 +313,11 @@ async function handleAsk(text: string) {
             evidenceOverview: null,
           })
         },
-        onRecord(id: number) {
+        onRecord(id: number, conversationId?: number) {
           recordId = id
+          if (conversationId) {
+            qaConversationId.value = conversationId
+          }
           updateMessage(sessionId, assistantId, {
             recordId: id,
           })
@@ -384,6 +398,8 @@ function handleStarterPick(prompt: string) {
 // ── Citation preview bridge ──
 const previewVisible = ref(false)
 const previewDocument = ref<DocumentItem | null>(null)
+/** 从引用卡片点开时携带的证据片段：弹窗顶部展示，文本预览中尽量高亮 */
+const previewHighlight = ref<{ snippet: string; chunkIndex: number | null } | null>(null)
 
 function openCitation(c: CitationItem) {
   if (c.documentId === null) return
@@ -405,8 +421,13 @@ function openCitation(c: CitationItem) {
     uploaderUserCode: null,
     previewText: c.snippet,
   }
+  previewHighlight.value = c.snippet ? { snippet: c.snippet, chunkIndex: c.chunkIndex } : null
   previewVisible.value = true
 }
+
+watch(previewVisible, (visible) => {
+  if (!visible) previewHighlight.value = null
+})
 
 function extractExt(fileName: string): string | null {
   const idx = fileName.lastIndexOf('.')
@@ -459,6 +480,12 @@ onMounted(() => {
         />
       </template>
 
+      <div v-if="qaConversationId && !asking" class="qa-new-topic-row">
+        <button class="qa-new-topic-btn" type="button" @click="startNewTopic">
+          ＋ 新话题
+        </button>
+        <span class="qa-new-topic-hint">当前为多轮会话模式，追问将自动带上对话背景</span>
+      </div>
       <QaComposer
         ref="composerRef"
         :disabled="!hasGroup"
@@ -471,6 +498,7 @@ onMounted(() => {
     <DocumentPreviewModal
       :visible="previewVisible"
       :document="previewDocument"
+      :highlight="previewHighlight"
       @update:visible="(v: boolean) => (previewVisible = v)"
     />
   </div>
@@ -481,7 +509,7 @@ onMounted(() => {
   display: flex;
   height: 100%;
   min-height: 560px;
-  background: #fff;
+  background: var(--surface-white);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   overflow: hidden;
@@ -503,5 +531,30 @@ onMounted(() => {
     min-height: 100vh;
     border-radius: 0;
   }
+}
+
+.qa-new-topic-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+}
+.qa-new-topic-btn {
+  padding: 4px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--brand-primary);
+  background: var(--surface-white);
+  border: 1px solid rgba(74, 144, 217, 0.35);
+  border-radius: 100px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.qa-new-topic-btn:hover {
+  background: rgba(74, 144, 217, 0.08);
+}
+.qa-new-topic-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }
 </style>
