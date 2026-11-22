@@ -76,3 +76,8 @@ scripts/投递追踪表.csv
 
 # 本地上传/运行产物，不作为项目源码提交
 /upload/
+
+# 工具缓存与历史重构备份（曾误提交，已清理，防止再次入库）
+backend/docs/**/node_modules/
+backend/docs/backup/
+*.bak-*

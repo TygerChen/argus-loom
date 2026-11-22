@@ -1,5 +1,7 @@
 # Argus Loom — 企业级 RAG 知识库 + 在线 Excel 协同
 
+![License](https://img.shields.io/badge/license-MIT-blue) ![Java](https://img.shields.io/badge/Java-21-orange) ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-green) ![Vue](https://img.shields.io/badge/Vue-3-42b883) ![Tests](https://img.shields.io/badge/tests-1649%20passed-brightgreen)
+
 面向约 500 名内部用户的企业知识库问答与财务 Excel 协作平台。模块化单体，一人可独立交付、可现场演示。**重点不是演示效果，而是权限可信、任务可恢复、回答有依据、协作可追踪。**
 
 ## 界面速览
@@ -84,7 +86,7 @@ flowchart LR
 
 ## 验证状态
 
-2026-10-24 本机验证：后端 `1649` tests / 0 failures / 0 errors（2026-10-25 复验）；前端 14 tests；前端 14 tests 全部通过；前端生产构建成功。
+2026-10-24 本机验证：后端 `1649` tests / 0 failures / 0 errors（2026-10-25 复验）；前端 14 tests 全部通过；前端生产构建成功。
 
 ## 安全
 
