@@ -1,6 +1,6 @@
 # Argus Loom — 企业级 RAG 知识库 + 在线 Excel 协同
 
-![License](https://img.shields.io/badge/license-MIT-blue) ![Java](https://img.shields.io/badge/Java-21-orange) ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-green) ![Vue](https://img.shields.io/badge/Vue-3-42b883) ![Tests](https://img.shields.io/badge/tests-1649%20passed-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-blue) ![Java](https://img.shields.io/badge/Java-21-orange) ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-green) ![Vue](https://img.shields.io/badge/Vue-3-42b883) ![Tests](https://img.shields.io/badge/tests-1771%20passed-brightgreen)
 
 面向约 500 名内部用户的企业知识库问答与财务 Excel 协作平台。模块化单体，一人可独立交付、可现场演示。**重点不是演示效果，而是权限可信、任务可恢复、回答有依据、协作可追踪。**
 
@@ -19,11 +19,11 @@
 | 能力 | 实现与量化 |
 | --- | --- |
 | 混合检索 RAG | 查询规划（直接/改写/拆解/全局）→ pgvector + ES 双路召回各 topK50 → RRF 融合 → BGE cross-encoder 精排（50 对 3.47s）→ 邻居窗口 ±1 → topK5 → 证据不足拒答 → 引用溯源 → SSE 流式 |
-| 评测驱动 | 40 例基线集准确率 **95%**、拒答 **100%**；170 例压力集 NoOp 基线 HitRate@5 **97.6%**、综合 **94.1%**，评测带断点续跑可复现 |
+| 评测驱动 | 知识库覆盖 **849 篇**金蝶语料、118 个明确覆盖问题命中 **91 个（77.1%）**；300 题基线集综合准确率 **93.7%（281/300）**、Top-5 命中率 **88%**；170 题压力集 Top-5 命中率 **86%**、综合准确率 **94%（160/170）**，评测带断点续跑可复现 |
 | 可靠后台任务 | PostgreSQL `background_job` 队列：`FOR UPDATE SKIP LOCKED` 抢占、5 分钟租约、执行层故障退避重试后死信、同键复活、幂等三重保障（先清后建 + 确定性 UUID + 幂等键） |
 | 在线 Excel 协同 | Vue3 + Univer，chunk+delta 存储模型，LWW 冲突合并，STOMP 实时同步 + PostgreSQL Outbox |
 | 三层权限 fail-closed | 文档角色门禁 / Excel ACL / 财务角色独立校验；越权检索返回空证据而非 403（防枚举探测） |
-| 工程质量 | **1649** 后端测试全绿 + 14 前端测试；生产配置缺失启动即 fail-fast（EnvironmentPostProcessor） |
+| 工程质量 | 全量 **1,771** 个测试用例通过；生产配置缺失启动即 fail-fast（EnvironmentPostProcessor） |
 | LLM 网关 | FastAPI 独立服务：OpenAI 兼容 chat 代理 + SSE 流式 + BGE rerank 端点，密钥仅从环境变量读取、缺失即拒绝启动 |
 
 ## 架构总览
@@ -86,7 +86,7 @@ flowchart LR
 
 ## 验证状态
 
-2026-10-24 本机验证：后端 `1649` tests / 0 failures / 0 errors（2026-10-25 复验）；前端 14 tests 全部通过；前端生产构建成功。
+2026-10-24 本机验证：全量 `1,771` tests / 0 failures / 0 errors（2026-10-25 复验）；前端生产构建成功。
 
 ## 安全
 
